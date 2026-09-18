@@ -20,7 +20,7 @@ Opening `index.html` straight from Finder also works (no offline cache that way)
 
 ## Put it on your phone
 
-It's a PWA like Home Program: host the folder on GitHub Pages, open it in Safari, Share → Add to Home Screen.
+Live at **https://seansaj5.github.io/piano/** (GitHub Pages, built from `main`). Open it in Safari, then Share → Add to Home Screen. Pushing to `main` redeploys in about a minute, and because the service worker is network-first, the installed app picks up changes the next time it opens with signal.
 
 ## Clef and the API key
 
