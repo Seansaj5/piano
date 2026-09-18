@@ -12,11 +12,13 @@ A practice room for piano, in the browser. No build step, no accounts, works off
 
 ## Run it
 
+The real thing is the live site (below). For a local preview while editing:
+
 ```
-node bin/serve.js        # http://localhost:8080
+node bin/serve.js --open     # serves http://localhost:8080 and opens it in Chrome
 ```
 
-Opening `index.html` straight from Finder also works (no offline cache that way).
+Safari with **HTTPS-Only** turned on refuses plain `http://`, even for localhost ("Safari Can't Open the Page … HTTPS-Only enabled"). That's Safari's setting, not a bug in the app. In Safari, use the live HTTPS site, or open `index.html` straight from Finder (that works too, just without the offline cache).
 
 ## Put it on your phone
 

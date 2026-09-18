@@ -10,6 +10,7 @@
   /* opts:
        from, to     midi range (snapped outward to white keys)
        fit          true: always show the whole range. false: show as many octaves as fit, with shift buttons.
+       start        where that window opens (midi of a C); defaults to the bottom of the range
        minKey       narrowest comfortable white key in px when fit is false (default 30)
        labels       "c" (default) | "all" | "none"
        toggle       taps select and deselect keys instead of being momentary
@@ -21,7 +22,7 @@
     this.to = this.o.to == null ? 84 : this.o.to;
     while (isBlack(this.from)) this.from--;
     while (isBlack(this.to)) this.to++;
-    this.winStart = this.from;
+    this.winStart = this.o.start == null ? this.from : this.o.start;
     this.marks = []; this.selected = []; this.down = {}; this.pointers = {};
     this.keys = {};
     el.classList.add("kb");

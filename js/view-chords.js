@@ -81,7 +81,7 @@
       $$("#chMode button").forEach(b => b.classList.toggle("on", b.getAttribute("data-mode") === mode));
       $("#chBuild").hidden = mode !== "build"; $("#chFind").hidden = mode !== "find";
       if (mode === "find") {
-        if (!findKb) findKb = new W.Keyboard($("#findKb"), { from: 36, to: 84, minKey: 26, toggle: true, labels: state.settings.labels, onToggle: sel => this.paintFound(sel) });
+        if (!findKb) findKb = new W.Keyboard($("#findKb"), { from: 36, to: 84, start: 48, minKey: 22, toggle: true, labels: state.settings.labels, onToggle: sel => this.paintFound(sel) });
         W.activeKeyboard = findKb;
         W.Midi.onNote = () => { const held = W.Midi.heldNotes(); if (held.length >= 2) { findKb.setSelected(held); this.paintFound(held); } };
         this.paintFound(findKb.selected);
