@@ -32,6 +32,34 @@
         { n: "D4 C4 F4", c: "F" }, { n: "E4:2 C4:.75 C4:.25", c: "C7" }, { n: "D4 C4 G4", c: "C7" }, { n: "F4:2 C4:.75 C4:.25", c: "F" },
         { n: "C5 A4 F4", c: "F" }, { n: "E4 D4 Bb4:.75 Bb4:.25", c: "Bb" }, { n: "A4 F4 G4", c: "F C7@2" }, { n: "F4:3", c: "F" }
       ]
+    },
+    {
+      id: "mary", title: "Mary Had a Little Lamb", by: "Traditional", key: "C", time: [4, 4], tempo: 100,
+      about: "Three notes do most of the work, over just I and V. The gentlest start for putting both hands together.",
+      bars: [
+        { n: "E4 D4 C4 D4", c: "C" }, { n: "E4 E4 E4:2", c: "C" }, { n: "D4 D4 D4:2", c: "G" }, { n: "E4 G4 G4:2", c: "C" },
+        { n: "E4 D4 C4 D4", c: "C" }, { n: "E4 E4 E4 E4", c: "C" }, { n: "D4 D4 E4 D4", c: "G7" }, { n: "C4:4", c: "C" }
+      ]
+    },
+    {
+      id: "jingle", title: "Jingle Bells (chorus)", by: "James Lord Pierpont", key: "C", time: [4, 4], tempo: 112,
+      about: "I, IV and V7, plus a D7 that leans into the G7. Mind the dotted rhythm on \u201call the way\u201d and \u201cfun it\u201d.",
+      bars: [
+        { n: "E4 E4 E4:2", c: "C" }, { n: "E4 E4 E4:2", c: "C" }, { n: "E4 G4 C4:1.5 D4:.5", c: "C" }, { n: "E4:4", c: "C" },
+        { n: "F4 F4 F4:1.5 F4:.5", c: "F" }, { n: "F4 E4 E4 E4:.5 E4:.5", c: "C" }, { n: "E4 D4 D4 E4", c: "D7" }, { n: "D4:2 G4:2", c: "G7" },
+        { n: "E4 E4 E4:2", c: "C" }, { n: "E4 E4 E4:2", c: "C" }, { n: "E4 G4 C4:1.5 D4:.5", c: "C" }, { n: "E4:4", c: "C" },
+        { n: "F4 F4 F4:1.5 F4:.5", c: "F" }, { n: "F4 E4 E4 E4:.5 E4:.5", c: "C" }, { n: "G4 G4 F4 D4", c: "G7" }, { n: "C4:4", c: "C" }
+      ]
+    },
+    {
+      id: "minuet", title: "Minuet in G", by: "Petzold, from Bach's notebook", key: "G", time: [3, 4], tempo: 104,
+      about: "Every piano student's first minuet. Three-four time, running eighth notes, and one sharp: every F is F\u266f.",
+      bars: [
+        { n: "D5 G4:.5 A4:.5 B4:.5 C5:.5", c: "G" }, { n: "D5 G4 G4", c: "G" }, { n: "E5 C5:.5 D5:.5 E5:.5 F#5:.5", c: "C" }, { n: "G5 G4 G4", c: "G" },
+        { n: "C5 D5:.5 C5:.5 B4:.5 A4:.5", c: "C" }, { n: "B4 C5:.5 B4:.5 A4:.5 G4:.5", c: "G" }, { n: "F#4 G4:.5 A4:.5 B4:.5 G4:.5", c: "D" }, { n: "A4:3", c: "D" },
+        { n: "D5 G4:.5 A4:.5 B4:.5 C5:.5", c: "G" }, { n: "D5 G4 G4", c: "G" }, { n: "E5 C5:.5 D5:.5 E5:.5 F#5:.5", c: "C" }, { n: "G5 G4 G4", c: "G" },
+        { n: "C5 D5:.5 C5:.5 B4:.5 A4:.5", c: "C" }, { n: "B4 C5:.5 B4:.5 A4:.5 G4:.5", c: "G" }, { n: "A4 B4:.5 A4:.5 G4:.5 F#4:.5", c: "D7" }, { n: "G4:3", c: "G" }
+      ]
     }
   ];
 

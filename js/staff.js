@@ -165,14 +165,14 @@
 
   /* ---------- lead sheet: melody on a treble staff, chord symbols above, several systems ----------
      song: { sig, time: [beats, unit], bars: [{ notes: [{p: pitch|null, d: beats, cls}], chords: [{beat, text, i}] , beats? }] }
-     opts: { space, width, perLine } . Chord symbols carry data-ci so the caller can make them clickable. */
+     opts: { space, width, perLine, noTime (a window that starts mid-tune) }. Chord symbols carry data-ci so the caller can make them clickable. */
   S.leadSheet = function (el, song, opts) {
     var o = opts || {}, s = o.space || 9, width = Math.max(260, o.width || el.clientWidth || 340);
     var full = song.time[0], perLine = o.perLine || (width > 900 ? 4 : width > 560 ? 3 : 2);
     var smap = sigMap(song.sig), out = [], y = 0;
     var bars = song.bars, idx = 0, sys = 0;
     while (idx < bars.length) {
-      var pre = preambleWidth(s, song.sig, sys === 0 ? song.time : null) + 0.9 * s;
+      var showTime = sys === 0 && !o.noTime, pre = preambleWidth(s, song.sig, showTime ? song.time : null) + 0.9 * s;
       var group = [], weight = 0;
       while (idx < bars.length && group.length < perLine + (sys === 0 && (bars[0].beats || full) < full ? 1 : 0)) {
         var b = bars[idx], beats = b.beats || full; group.push({ bar: b, i: idx, w: Math.max(0.45, beats / full) }); weight += Math.max(0.45, beats / full); idx++;
@@ -183,7 +183,7 @@
       var st = { clef: "treble", y0: y + 3.4 * s + (Math.max(hi, 11) - 8) * s / 2 + 4 * s };
       var x0 = 0.4 * s, xEnd = width - 0.4 * s;
       staffLines(out, st, s, x0, xEnd);
-      preamble(out, st, s, x0 + 0.5 * s, song.sig, sys === 0 ? song.time : null);
+      preamble(out, st, s, x0 + 0.5 * s, song.sig, showTime ? song.time : null);
       var bx = x0 + pre, unit = (xEnd - bx) / Math.max(weight, perLine * (group.length < perLine ? 1 : 0) || weight);
       if (group.length < perLine && idx >= bars.length) unit = (xEnd - bx) / Math.max(weight, perLine * 0.75);
       var labelY = st.y0 - Math.max(hi + 1, 11.5) * s / 2 - 0.5 * s;

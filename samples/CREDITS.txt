@@ -1,0 +1,16 @@
+Woodshed piano samples
+
+grand/    Salamander Grand Piano V3 by Alexander Holm, recorded from a Yamaha C5 grand.
+          License: Creative Commons Attribution 3.0, https://creativecommons.org/licenses/by/3.0/
+          Source: https://archive.org/details/SalamanderGrandPianoV3, taken from the MP3 mirror used by
+          @tonejs/piano (https://github.com/tambien/Piano). Layer p = velocity layer 8, f = layer 14 (of 16).
+
+upright/  Upright Piano KW by Gonzalo and Roberto (FreePats project), recorded from a Kawai upright.
+          License: CC0 1.0 public domain dedication, https://creativecommons.org/publicdomain/zero/1.0/
+          Source: https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html#UprightKW (2022-02-21 SFZ+FLAC).
+          Layer p = the SFZ's soft zones (velocity 1-80), f = its loud zones (81-127).
+
+Changes made for Woodshed: every file was trimmed to start at its attack, shortened with a fade-out (upright
+zones that end early were extended through their own loop with a gentle decay), the upright bank was lowered
+3 dB as a whole, three soft upright zones have the SFZ's low-pass filter baked in, and all files were re-encoded
+as AAC (.m4a). File names are {midi of the sampled key}{layer}.m4a.

@@ -34,7 +34,8 @@
   /* ---------- saved state ---------- */
   const STORE = "ws.v1";
   const defaults = () => ({
-    settings: { labels: "c", volume: 0.8, midiSound: false },
+    settings: { labels: "c", volume: 0.8, midiSound: false, instrument: "grand", room: "room" },
+    play: { zoom: "m", mode: "free", song: "ode", take: null, best: {} },
     stats: {}, log: {}, charts: [],
     sheet: { id: "ode", voicing: "lh", simplify: "none", loop: true, click: true, melody: true, chords: true, tempo: {}, transpose: {} },
     metro: { bpm: 92, beats: 4, accent: true },
@@ -155,7 +156,7 @@
     const name = W.views[m[1]] ? m[1] : "today", params = {};
     (m[2] || "").split("&").forEach(kv => { if (kv) { const p = kv.split("="); params[p[0]] = decodeURIComponent(p[1] || ""); } });
     if (App.current && App.current !== name && W.views[App.current].hide) W.views[App.current].hide();
-    App.current = name;
+    App.current = name; document.body.setAttribute("data-view", name);
     $$(".view").forEach(v => { v.hidden = v.id !== "v-" + name; });
     $$("#tabs a").forEach(a => a.classList.toggle("on", a.getAttribute("data-v") === name));
     const v = W.views[name], el = $("#v-" + name);
@@ -166,15 +167,21 @@
 
   App.start = () => {
     A.setVolume(state.settings.volume);
+    A.setInstrument(A.INSTRUMENTS.some(i => i.id === state.settings.instrument) ? state.settings.instrument : "grand");
+    A.setRoom(state.settings.room);
     W.Midi.sound = !!state.settings.midiSound;
     $("#timerBtn").addEventListener("click", App.timerToggle);
     $("#metroMini").addEventListener("click", () => metro.toggle());
     window.addEventListener("hashchange", route);
     document.addEventListener("visibilitychange", () => { if (document.hidden) App.saveNow(); });
     window.addEventListener("pagehide", App.saveNow);
-    // the first touch anywhere unlocks audio, so the first key press is not silent
-    const unlock = () => { A.init(); document.removeEventListener("pointerdown", unlock, true); };
-    document.addEventListener("pointerdown", unlock, true);
+    // The first touch anywhere unlocks audio, so the first key press is not silent. iPhones only accept some gestures
+    // (a touchend or a click, not always a pointerdown), so keep trying until the context is really running.
+    const GESTURES = ["pointerdown", "touchend", "click", "keydown"];
+    const unlock = () => { const c = A.init(); if (c && c.state === "running") GESTURES.forEach(g => document.removeEventListener(g, unlock, true)); };
+    GESTURES.forEach(g => document.addEventListener(g, unlock, true));
+    // Fetch the chosen piano in the background once the page has settled, so it is ready by the first note.
+    setTimeout(() => A.preload(), 1500);
     timerPaint(); metro.paint(); route();
     if (W.Tutor) W.Tutor.start();
   };
@@ -263,6 +270,8 @@
         </div>
         <div class="mt-l"><span class="eyebrow">Jump in</span></div>
         <div class="quick mt-s">
+          <a class="tile" href="#/piano"><b>Piano</b><span>Just play: a real grand, a sustain pedal, and every chord named as you play it.</span></a>
+          <a class="tile" href="#/piano?learn=${encodeURIComponent(state.play.song || "ode")}"><b>Learn a melody</b><span>Woodshed lights each note and plays the chords under you.</span></a>
           <a class="tile" href="#/sheet"><b>Lead sheets</b><span>Decode the chord symbols over a melody and hear how to voice them.</span></a>
           <a class="tile" href="#/chords"><b>Chord explorer</b><span>Every chord, every inversion, on the keys and the staff.</span></a>
           <a class="tile" href="#/keys"><b>Circle of fifths</b><span>Signatures, scales with fingering, and the chords in each key.</span></a>
@@ -313,9 +322,13 @@
             </div>
             <div class="card">
               <span class="eyebrow">Sound &amp; keys</span>
-              <label class="field">Volume<input type="range" id="vol" min="0" max="1" step="0.01"></label>
+              <label class="field">Piano<select id="instSel">${A.INSTRUMENTS.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join("")}</select></label>
+              <p class="sub mt-s" id="instNote"></p>
+              <div class="row mt"><span class="sub">Room</span><div class="seg" id="roomSeg">${A.ROOMS.map(r => `<button data-room="${r[0]}">${r[1]}</button>`).join("")}</div></div>
+              <label class="field mt">Volume<input type="range" id="vol" min="0" max="1" step="0.01"></label>
               <div class="row mt"><span class="sub">Key labels</span><div class="seg" id="lblSeg"><button data-l="c">C only</button><button data-l="all">All white keys</button><button data-l="none">None</button></div></div>
-              <p class="sub mt">On a computer the home row plays notes: <span class="mono">A S D F G H J K</span> are the white keys from C, <span class="mono">W E T Y U</span> the black keys, <span class="mono">Z</span> / <span class="mono">X</span> shift the octave.</p>
+              <div class="row mt"><button class="btn ghost small" id="dlAll">Keep every piano offline</button><span class="sub" id="dlNote"></span></div>
+              <p class="sub mt">On a computer the home row plays notes: <span class="mono">A S D F G H J K</span> are the white keys from C, <span class="mono">W E T Y U</span> the black keys, <span class="mono">Z</span> / <span class="mono">X</span> shift the octave. On the Piano page the <span class="mono">space bar</span> is the sustain pedal.</p>
             </div>
             <div class="card">
               <span class="eyebrow">Practice record</span>
@@ -324,7 +337,7 @@
             </div>
             <div class="card">
               <span class="eyebrow">About</span>
-              <p class="prose">Woodshed runs entirely in your browser and works offline once loaded. Your progress is stored on this device only. Notation glyphs come from <a href="https://github.com/steinbergmedia/bravura" target="_blank" rel="noopener">Bravura</a> (SIL Open Font License). “Woodshedding” is musician slang for shutting yourself away to practice until it's right.</p>
+              <p class="prose">Woodshed runs entirely in your browser and works offline once loaded. Your progress is stored on this device only. The grand piano is the <a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener">Salamander Grand</a> by Alexander Holm (CC BY 3.0), a Yamaha C5; the upright is <a href="https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html" target="_blank" rel="noopener">Upright Piano KW</a> from FreePats (CC0), a Kawai. Notation glyphs come from <a href="https://github.com/steinbergmedia/bravura" target="_blank" rel="noopener">Bravura</a> (SIL Open Font License). “Woodshedding” is musician slang for shutting yourself away to practice until it's right.</p>
             </div>
           </div>
         </div>`;
@@ -332,6 +345,18 @@
         const m = e.target.closest("[data-m]"); if (m) return metro.setBpm(state.metro.bpm + (+m.getAttribute("data-m")));
         const b = e.target.closest("[data-b]"); if (b) return metro.setBeats(+b.getAttribute("data-b"));
         const l = e.target.closest("[data-l]"); if (l) { state.settings.labels = l.getAttribute("data-l"); App.save(); this.show(); App.toast("Key labels updated"); }
+        const r = e.target.closest("[data-room]"); if (r) { state.settings.room = r.getAttribute("data-room"); A.setRoom(state.settings.room); App.save(); this.paintSound(); A.play([48, 60, 64, 67, 72], { strum: 0.05, dur: 0.5, vel: 0.62 }); }
+      });
+      $("#instSel").addEventListener("change", e => {
+        A.init(); A.setInstrument(e.target.value); state.settings.instrument = e.target.value; App.save(); this.paintSound();
+        const go = () => A.play([48, 55, 60, 64, 67, 72], { strum: 0.075, dur: 1.9, vel: 0.6 });
+        if (A.status(e.target.value).state === "ready") go(); else A.load(e.target.value).then(() => { if (A.instrument() === e.target.value && App.current === "tools") go(); });
+      });
+      A.onStatus(() => { if (App.current === "tools") this.paintSound(); });
+      $("#dlAll").addEventListener("click", () => {
+        const ids = A.INSTRUMENTS.filter(i => i.set).map(i => i.id);
+        $("#dlNote").textContent = "Downloading…";
+        Promise.all(ids.map(id => A.cache(id))).then(bad => { $("#dlNote").textContent = bad.some(n => n) ? "Some sounds didn't download. Try again with a connection." : "Every piano is saved on this device."; });
       });
       $("#mGo").addEventListener("click", () => metro.toggle());
       $("#mTap").addEventListener("click", App.tapTempo);
@@ -358,13 +383,19 @@
       $$("#mSig button").forEach(b => b.classList.toggle("on", +b.getAttribute("data-b") === m.beats));
       $("#mAccent").checked = m.accent;
     },
+    paintSound() {
+      const id = A.instrument(), ins = A.INSTRUMENTS.filter(i => i.id === id)[0], st = A.status(id);
+      $("#instSel").value = id;
+      $("#instNote").textContent = ins.blurb + (ins.set ? " " + (st.state === "ready" ? "Ready, and kept for offline use." : st.state === "loading" ? "Downloading " + Math.round(100 * st.loaded / Math.max(1, st.total)) + "%." : st.state === "error" ? "Couldn't download it just now, so the simple synth fills in." : st.saved ? "Saved on this device." : "It downloads the first time you play.") : "");
+      $$("#roomSeg button").forEach(b => b.classList.toggle("on", b.getAttribute("data-room") === A.room()));
+    },
     paintMidi() {
       const s = $("#midiStatus");
       if (!W.Midi.supported) { s.textContent = "This browser has no Web MIDI. Chrome or Edge on a computer does; Safari and iPhones do not."; $("#midiGo").disabled = true; return; }
       s.textContent = !W.Midi.access ? "Not connected." : W.Midi.inputs.length ? "Connected: " + W.Midi.inputs.join(", ") : "MIDI is allowed, but no keyboard is plugged in yet.";
     },
     show() {
-      this.paintMetro(); this.paintMidi();
+      this.paintMetro(); this.paintMidi(); this.paintSound();
       $("#vol").value = state.settings.volume; $("#midiSound").checked = !!state.settings.midiSound;
       $$("#lblSeg button").forEach(b => b.classList.toggle("on", b.getAttribute("data-l") === state.settings.labels));
       const days = Object.keys(state.log).filter(k => practiced(state.log[k])).length;

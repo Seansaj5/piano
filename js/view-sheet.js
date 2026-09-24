@@ -12,6 +12,8 @@
   }
   const Sheet = W.Sheet = {
     titleOf: id => { const s = find(id); return s ? s.title : null; },
+    // Bars of a built-in tune with its melody parsed: [{beats, notes: [{p, d}], slots: [{beat, beats, text, chord}]}]
+    parseSong: song => parseSongBars(song),
     // Used by the tutor after a scan, and by the Keys view.
     open(chart) {
       const id = chart.id || "c" + Date.now().toString(36);
@@ -227,7 +229,7 @@
 
   function paintEditor() {
     const box = $("#shEdit"), src = doc.src;
-    if (doc.melody) { box.innerHTML = `<span class="eyebrow">Make it yours</span><p class="sub">This tune is built in. You can copy its chords into a chart of your own and change them.</p><div class="row mt"><button class="btn ghost small" id="edCopy">Copy chords to a new chart</button><button class="btn ghost small" id="edNew">Blank chart</button></div>`; return; }
+    if (doc.melody) { box.innerHTML = `<span class="eyebrow">Make it yours</span><p class="sub">This tune is built in. Learn its melody note by note on the Piano page, or copy its chords into a chart of your own and change them.</p><div class="row mt"><a class="btn small" href="#/piano?learn=${encodeURIComponent(doc.id)}">Learn the melody</a><button class="btn ghost small" id="edCopy">Copy chords to a new chart</button><button class="btn ghost small" id="edNew">Blank chart</button></div>`; return; }
     box.innerHTML = `
       <span class="eyebrow">${doc.mine ? "Edit this chart" : "Chart text"}</span>
       <div class="grid2" style="grid-template-columns:minmax(0,1fr) auto auto;align-items:end">

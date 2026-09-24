@@ -1,15 +1,19 @@
 // Service worker for Woodshed.
 //
 // Everything on this origin is fetched network-first, so an edit to any file shows up on the next open with
-// signal, and the last good copy is served when there is none (a basement, a plane, a practice room).
+// signal, and the last good copy is served when there is none (a basement, a plane, a practice room). The one
+// exception is the piano samples: big, and never edited in place, so they come from the cache first.
 // Bump CACHE_VERSION only when you rename or remove files, or change the font URL.
 const CACHE_VERSION = 'v1';
 const CACHE_NAME = 'woodshed-' + CACHE_VERSION;
+// Piano recordings never change once published (a new recording gets a new name), so they are fetched once and kept
+// in their own cache, which survives app updates and CACHE_VERSION bumps.
+const SAMPLE_CACHE = 'woodshed-samples-1';
 
 const PRECACHE = [
   './', './index.html', './manifest.json', './css/app.css',
   './js/theory.js', './js/glyphs.js', './js/staff.js', './js/audio.js', './js/keyboard.js', './js/songs.js',
-  './js/app.js', './js/view-chords.js', './js/view-keys.js', './js/view-sheet.js', './js/view-train.js', './js/tutor.js',
+  './js/app.js', './js/view-chords.js', './js/view-keys.js', './js/view-sheet.js', './js/view-train.js', './js/view-play.js', './js/tutor.js',
   './fonts/accidentals.otf', './icons/icon-192.png', './icons/icon-512.png'
 ];
 
@@ -30,7 +34,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k.startsWith('woodshed-') && k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('woodshed-') && k !== CACHE_NAME && k !== SAMPLE_CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -40,6 +44,7 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin === self.location.origin) {
+    if (url.pathname.includes('/samples/')) { event.respondWith(sampleFirst(url.origin + url.pathname)); return; }
     const key = url.origin + (url.pathname.endsWith('/index.html') ? url.pathname.slice(0, -10) : url.pathname);
     event.respondWith(networkFirst(key));
     return;
@@ -71,6 +76,13 @@ function networkFirst(key) {
       return response;
     })
     .catch(() => caches.match(key).then(cached => cached || Response.error()));
+}
+
+function sampleFirst(key) {
+  return caches.open(SAMPLE_CACHE).then(cache => cache.match(key).then(hit => hit || fetch(key).then(response => {
+    if (response.ok) cache.put(key, response.clone());
+    return response;
+  })));
 }
 
 function cacheFirst(request) {

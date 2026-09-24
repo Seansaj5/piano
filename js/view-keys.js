@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const W = self.W, T = W.T, A = W.Audio, App = W.App, $ = App.$, $$ = App.$$, esc = App.esc, state = App.state;
-  let kb = null, flashTimer = 0, useTwin = false, playTimers = [];
+  let kb = null, flashTimer = 0, useTwin = false;
 
   function curKey() {
     const s = state.keys; let sig = s.sig;
@@ -82,11 +82,9 @@
     },
 
     playScale(both) {
-      playTimers.forEach(clearTimeout); playTimers = [];
       const { ps } = this.pitches(); let seq = ps.map(p => p.midi);
       if (both) seq = seq.concat(seq.slice(0, -1).reverse());
-      const step = 0.3; A.sequence(seq, step);
-      seq.forEach((m, i) => playTimers.push(setTimeout(() => { const k = kb && kb.keys[m]; if (k) { k.classList.add("down"); setTimeout(() => k.classList.remove("down"), step * 900); } }, 30 + i * step * 1000)));
+      A.allOff(); A.sequence(seq, 0.3);          // the keys light up by themselves as each note sounds
     },
 
     flashChord(ch, btn) {
@@ -165,6 +163,6 @@
       if (params.key) { const k = T.parseKey(params.key); if (k) { state.keys.sig = k.sig; state.keys.mode = k.mode; state.keys.scale = "auto"; } }
       this.update();
     },
-    hide() { playTimers.forEach(clearTimeout); clearTimeout(flashTimer); }
+    hide() { clearTimeout(flashTimer); }
   };
 })();

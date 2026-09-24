@@ -11,10 +11,14 @@
        from, to     midi range (snapped outward to white keys)
        fit          true: always show the whole range. false: show as many octaves as fit, with shift buttons.
        start        where that window opens (midi of a C); defaults to the bottom of the range
+       center       or: keep this note (a C) in the middle of however many octaves fit, until the player shifts
        minKey       narrowest comfortable white key in px when fit is false (default 30)
+       octaves      or: fn(width) -> how many octaves to show at that width
        labels       "c" (default) | "all" | "none"
        toggle       taps select and deselect keys instead of being momentary
        sound        false to stay silent
+       pedal        true: the space bar works the sustain pedal while this keyboard is the active one
+       echo         false: don't light up the keys the app itself plays (ear drills, where that gives the answer away)
        onDown(midi, velocity, source), onUp(midi), onToggle([midi...]) */
   function Keyboard(el, opts) {
     this.el = el; this.o = opts || {};
@@ -23,14 +27,28 @@
     while (isBlack(this.from)) this.from--;
     while (isBlack(this.to)) this.to++;
     this.winStart = this.o.start == null ? this.from : this.o.start;
-    this.marks = []; this.selected = []; this.down = {}; this.pointers = {};
+    this.marks = []; this.selected = []; this.down = {}; this.pointers = {}; this.voices = {};
     this.keys = {};
     el.classList.add("kb");
     this.build();
     var self = this;
     if (root.ResizeObserver) { this.ro = new ResizeObserver(function () { self.layout(); }); this.ro.observe(el); }
     this.bind();
+    // Light up what the app plays (chords, scales, playback), so you see it as you hear it.
+    if (this.o.echo !== false) this.unecho = W.Audio.onPlay(function (midi, delay, dur) { self.echo(midi, delay, dur); });
+    all.push(this);
   }
+  var all = [];                        // live keyboards, so a lost focus can let go of every held key
+
+  Keyboard.prototype.echo = function (midi, delay, dur) {
+    if (!document.body.contains(this.el)) { this.destroy(); return; }
+    var self = this;
+    setTimeout(function () {
+      var k = self.keys[midi]; if (!k) return;
+      k.classList.add("played");
+      clearTimeout(k._echo); k._echo = setTimeout(function () { k.classList.remove("played"); }, Math.max(90, dur * 1000));
+    }, delay * 1000);
+  };
 
   Keyboard.prototype.build = function () {
     this.el.innerHTML = '<div class="kb-bar"><button type="button" class="kb-shift" data-d="-1" aria-label="Lower octave">‹</button><span class="kb-range"></span><button type="button" class="kb-shift" data-d="1" aria-label="Higher octave">›</button></div><div class="kb-keys"></div>';
@@ -41,9 +59,10 @@
   Keyboard.prototype.window = function () {
     if (this.o.fit) return [this.from, this.to];
     var w = this.el.clientWidth || 360, minKey = this.o.minKey || 30;
-    var octs = Math.max(1, Math.min(Math.floor(w / (7 * minKey)), Math.floor((this.to - this.from + 1) / 12)));
+    var octs = Math.max(1, Math.min(this.o.octaves ? this.o.octaves(w) : Math.floor(w / (7 * minKey)), Math.floor((this.to - this.from + 1) / 12)));
     var span = octs * 12;                                   // C..B blocks, plus a closing C when there is room
-    var start = Math.max(this.from, Math.min(this.winStart, this.to - span));
+    var want = this.o.center != null && !this.moved ? this.o.center - Math.floor(octs / 2) * 12 : this.winStart;
+    var start = Math.max(this.from, Math.min(want, this.to - span));
     start -= T.mod(start, 12);                              // windows start on C
     if (start < this.from) start = this.from;
     var end = Math.min(this.to, start + span);
@@ -82,13 +101,14 @@
     this.paint();
   };
 
-  Keyboard.prototype.shift = function (dir) { this.winStart = this.lo + dir * 12; this.layout(true); };
+  Keyboard.prototype.shift = function (dir) { this.winStart = this.lo + dir * 12; this.moved = true; this.layout(true); };
+  Keyboard.prototype.setOctaves = function (fn) { this.o.octaves = fn; this.layout(true); };
   // Slide the window so these notes are visible (as far as the width allows).
   Keyboard.prototype.reveal = function (midis) {
     if (this.o.fit || !midis.length) return;
     var lo = Math.min.apply(null, midis), hi = Math.max.apply(null, midis);
     if (lo >= this.lo && hi <= this.hi) return;
-    this.winStart = lo - T.mod(lo, 12);
+    this.winStart = lo - T.mod(lo, 12); this.moved = true;
     this.layout(true);
   };
 
@@ -123,7 +143,8 @@
     if (this.down[midi]) return;
     this.down[midi] = true;
     var k = this.keys[midi]; if (k) k.classList.add("down");
-    if (this.o.sound !== false && !(source === "midi" && !W.Midi.sound)) W.Audio.noteOn(midi, vel == null ? 0.7 : vel);
+    // Each key keeps its own voice, so letting go of one never touches another.
+    if (this.o.sound !== false && !(source === "midi" && !W.Midi.sound)) this.voices[midi] = W.Audio.noteOn(midi, vel == null ? 0.7 : vel);
     if (this.o.toggle && source !== "midi") {
       var i = this.selected.indexOf(midi);
       if (i >= 0) this.selected.splice(i, 1); else this.selected.push(midi);
@@ -136,9 +157,11 @@
     if (!this.down[midi]) return;
     delete this.down[midi];
     var k = this.keys[midi]; if (k) k.classList.remove("down");
-    if (this.o.sound !== false) W.Audio.noteOff(midi);
+    var v = this.voices[midi]; delete this.voices[midi];
+    if (v) W.Audio.keyUp(v);
     if (this.o.onUp) this.o.onUp(midi, source || "touch");
   };
+  Keyboard.prototype.liftAll = function () { var self = this; Object.keys(this.down).forEach(function (m) { self.lift(+m); }); this.pointers = {}; };
   Keyboard.prototype.held = function () { return Object.keys(this.down).map(Number).sort(function (a, b) { return a - b; }); };
 
   Keyboard.prototype.bind = function () {
@@ -156,7 +179,7 @@
       try { body.setPointerCapture(e.pointerId); } catch (x) {}
       self.pointers[e.pointerId] = m;
       // press harder near the front of the key, like a real one
-      var r = self.keys[m].getBoundingClientRect(), vel = 0.45 + 0.45 * Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+      var r = self.keys[m].getBoundingClientRect(), vel = 0.42 + 0.48 * Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
       self.press(m, vel);
     });
     body.addEventListener("pointermove", function (e) {
@@ -176,33 +199,52 @@
       var b = e.target.closest(".kb-shift"); if (b && !b.disabled) self.shift(+b.getAttribute("data-d"));
     });
   };
-  Keyboard.prototype.destroy = function () { if (this.ro) this.ro.disconnect(); if (W.activeKeyboard === this) W.activeKeyboard = null; };
+  Keyboard.prototype.destroy = function () {
+    if (this.ro) this.ro.disconnect();
+    if (this.unecho) { this.unecho(); this.unecho = null; }
+    this.liftAll();
+    var i = all.indexOf(this); if (i >= 0) all.splice(i, 1);
+    if (W.activeKeyboard === this) W.activeKeyboard = null;
+  };
   W.Keyboard = Keyboard;
+
+  // Switching apps mid-chord never delivers the key-up, so let go of everything when the page loses focus.
+  function letGo() {
+    all.slice().forEach(function (kb) { if (!document.body.contains(kb.el)) kb.destroy(); else kb.liftAll(); });
+    Object.keys(typed).forEach(function (k) { delete typed[k]; });
+    if (spacePedal) { spacePedal = false; W.Audio.pedal(false); }
+  }
+  root.addEventListener("blur", letGo);
+  document.addEventListener("visibilitychange", function () { if (document.hidden) letGo(); });
 
   /* ---------- computer keyboard: A W S E D F T G Y H U J K O L P ; ---------- */
   var ROW = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12, o: 13, l: 14, p: 15, ";": 16 };
-  var typed = {};
+  var typed = {}, spacePedal = false;
+  function typing(e) { var tag = (e.target.tagName || "").toLowerCase(); return tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable; }
+  function pedalKeyboard() { var kb = W.activeKeyboard; return kb && kb.o.pedal && document.body.contains(kb.el) && kb.el.offsetParent ? kb : null; }
   document.addEventListener("keydown", function (e) {
-    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
-    var tag = (e.target.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === " " && !typing(e) && pedalKeyboard()) { e.preventDefault(); if (!spacePedal) { spacePedal = true; W.Audio.pedal(true); } return; }
+    if (e.repeat || typing(e)) return;
     var kb = W.activeKeyboard; if (!kb || !document.body.contains(kb.el) || !kb.el.offsetParent) return;
     var key = e.key.toLowerCase();
     if (key === "z" || key === "x") { if (!kb.o.fit) kb.shift(key === "z" ? -1 : 1); return; }
     if (!(key in ROW)) return;
     var base = kb.lo + (T.mod(kb.lo, 12) ? 12 - T.mod(kb.lo, 12) : 0);
     if (kb.hi - base >= 24 && kb.o.fit) base += 12;
+    else if (kb.hi - base >= 36) { var mid = (kb.lo + kb.hi) / 2; base = Math.floor(mid / 12) * 12; }   // wide keyboards: the C at the middle
     var m = base + ROW[key];
     if (m > kb.hi) return;
     typed[key] = m; kb.press(m, 0.7, "keys");
   });
   document.addEventListener("keyup", function (e) {
+    if (e.key === " " && spacePedal) { e.preventDefault(); spacePedal = false; W.Audio.pedal(false); return; }
     var key = e.key.toLowerCase();
     if (typed[key] != null && W.activeKeyboard) { W.activeKeyboard.lift(typed[key], "keys"); delete typed[key]; }
   });
 
   /* ---------- Web MIDI (Chrome and Edge; Safari has none) ---------- */
-  var Midi = W.Midi = { supported: !!navigator.requestMIDIAccess, access: null, inputs: [], sound: false, held: {}, listeners: [] };
+  var Midi = W.Midi = { supported: !!navigator.requestMIDIAccess, access: null, inputs: [], sound: false, held: {}, voices: {}, listeners: [] };
   Midi.onChange = function (fn) { Midi.listeners.push(fn); };
   function changed() { Midi.listeners.forEach(function (fn) { fn(); }); }
   Midi.connect = function () {
@@ -224,12 +266,15 @@
     if (cmd === 0x90 && vel > 0) {
       Midi.held[note] = true;
       if (kb) { kb.reveal([note]); kb.press(note, vel / 127, "midi"); }
-      else if (Midi.sound) W.Audio.noteOn(note, vel / 127);
+      else if (Midi.sound) Midi.voices[note] = W.Audio.noteOn(note, vel / 127);
       if (Midi.onNote) Midi.onNote(note, true);
     } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
       delete Midi.held[note];
-      if (kb) kb.lift(note, "midi"); else W.Audio.noteOff(note);
+      if (kb) kb.lift(note, "midi");
+      if (Midi.voices[note]) { W.Audio.keyUp(Midi.voices[note]); delete Midi.voices[note]; }
       if (Midi.onNote) Midi.onNote(note, false);
+    } else if (cmd === 0xb0 && note === 64) {
+      W.Audio.pedal(vel >= 64);                       // the sustain pedal
     }
   }
   Midi.heldNotes = function () { return Object.keys(Midi.held).map(Number).sort(function (a, b) { return a - b; }); };
