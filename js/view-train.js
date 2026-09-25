@@ -9,6 +9,11 @@
   const SONG_HINT = ["", "the ‘Jaws’ theme", "‘Happy Birthday’ (first two different notes)", "‘Greensleeves’", "‘When the Saints’", "‘Here Comes the Bride’", "‘The Simpsons’ theme", "‘Twinkle, Twinkle’", "‘The Entertainer’ (third to fourth note)", "‘My Bonnie’", "‘Somewhere’ from West Side Story", "‘Take On Me’ chorus", "‘Over the Rainbow’"];
 
   const opt = (drill, id, fallback) => { const o = state.train[drill] || {}; return o[id] == null ? fallback : o[id]; };
+  let quietRun = false;      // a drill opened from the Study tab: nothing is played
+  const NUMERALS = ["I", "ii", "iii", "IV", "V", "vi", "vii°"], NUMERALS_MIN = ["i", "ii°", "III", "iv", "v", "VI", "VII"];
+  const DEG_NAMES = ["tonic", "supertonic", "mediant", "subdominant", "dominant", "submediant", "leading tone"];
+  const VALUES = [[4, "Whole note", "4 beats"], [3, "Dotted half", "3 beats"], [2, "Half note", "2 beats"], [1.5, "Dotted quarter", "1½ beats"], [1, "Quarter note", "1 beat"], [0.5, "Eighth note", "½ beat"], [0.25, "Sixteenth", "¼ beat"]];
+  const KEYS12 = ["C", "G", "D", "A", "E", "F", "Bb", "Eb", "Ab", "Db", "B", "F#"];
 
   /* ---------- the drills ---------- */
   const DRILLS = W.DRILLS = [
@@ -28,7 +33,7 @@
         return {
           item: clef + ":" + T.pitchName(p), kind: "letters", ask: "Which note is this?", answer: LETTERS[p.l], midi: p.midi,
           render(box) { box.innerHTML = `<div class="paper center" style="max-width:260px;margin:0 auto" id="qStaff"></div>`; W.Staff.render($("#qStaff"), { clef: clef, width: 230, space: 13, items: [{ pitches: [p] }], aria: "A note on the " + clef + " staff" }); },
-          reveal(box, ok) { box.innerHTML = `<div class="paper center" style="max-width:260px;margin:0 auto" id="qStaff"></div><div class="kb mini dense mt" id="qKb"></div>`; W.Staff.render($("#qStaff"), { clef: clef, width: 230, space: 13, items: [{ pitches: [p], cls: ok ? "good" : "bad", label: T.pitchName(p) }] }); const k = new W.Keyboard($("#qKb"), { from: 36, to: 84, fit: true, labels: "c", sound: true }); k.mark([{ midi: p.midi, cls: "good", label: LETTERS[p.l] }]); A.play([p.midi], { dur: 1 }); },
+          reveal(box, ok) { box.innerHTML = `<div class="paper center" style="max-width:260px;margin:0 auto" id="qStaff"></div><div class="kb mini dense mt" id="qKb"></div>`; W.Staff.render($("#qStaff"), { clef: clef, width: 230, space: 13, items: [{ pitches: [p], cls: ok ? "good" : "bad", label: T.pitchName(p) }] }); const k = new W.Keyboard($("#qKb"), { from: 36, to: 84, fit: true, labels: "c", sound: true }); k.mark([{ midi: p.midi, cls: "good", label: LETTERS[p.l] }]); if (!quietRun) A.play([p.midi], { dur: 1 }); },
           explain: `${T.pitchName(p)} sits ${where}. ${memo}`
         };
       }
@@ -97,6 +102,80 @@
       }
     },
     {
+      id: "wint", name: "Written intervals", quiet: true, blurb: "Two notes on the staff. Name the interval by counting letters, then half steps.",
+      options: [{ id: "how", choices: [["melodic", "Side by side"], ["harmonic", "Stacked"]], def: "melodic" }, { id: "clef", choices: [["treble", "Treble"], ["bass", "Bass"]], def: "treble" }],
+      make() {
+        const clef = opt("wint", "clef", "treble"), how = opt("wint", "how", "melodic");
+        const base = clef === "treble" ? 60 : 41, whites = [];
+        for (let m = base; m <= base + 19; m++) if ([0, 2, 4, 5, 7, 9, 11].indexOf(T.mod(m, 12)) >= 0) whites.push(m);
+        const i = Math.floor(Math.random() * (whites.length - 1)), span = 1 + Math.floor(Math.random() * Math.min(7, whites.length - 1 - i));
+        const a = T.spellIn(whites[i], null), b = T.spellIn(whites[i + span], null), semis = b.midi - a.midi, name = T.INTERVAL_NAMES[semis];
+        const letters = span + 1, choices = App.shuffle([name].concat(App.shuffle(T.INTERVAL_NAMES.filter(n => n && n !== name)).slice(0, 3)));
+        return { item: String(semis), kind: "choice", ask: "What interval is written here?", answer: name, choices: choices,
+          render(box) { box.innerHTML = `<div class="paper center" style="max-width:280px;margin:0 auto" id="qStaff"></div>`; W.Staff.render($("#qStaff"), { clef: clef, width: 250, space: 12, items: how === "harmonic" ? [{ pitches: [a, b] }] : [{ pitches: [a] }, { pitches: [b] }] }); },
+          explain: `${T.pitchName(a)} up to ${T.pitchName(b)} spans ${letters} letter names (a ${letters === 8 ? "octave" : T.ordinal(letters)}) and ${semis} half steps: ${name}. Count letters first for the number, half steps for the quality.` };
+      }
+    },
+    {
+      id: "numeral", name: "Roman numerals", quiet: true, blurb: "IV in E major? vi in F? Turn numerals into chords and back.",
+      options: [{ id: "mode", choices: [["major", "Major keys"], ["minor", "Minor keys"], ["both", "Both"]], def: "major" }, { id: "dir", choices: [["chord", "Numeral → chord"], ["numeral", "Chord → numeral"]], def: "chord" }],
+      make() {
+        const modeOpt = opt("numeral", "mode", "major"), mode = modeOpt === "both" ? pick(["major", "minor"]) : modeOpt, dir = opt("numeral", "dir", "chord");
+        const k = T.parseKey(pick(KEYS12) + (mode === "minor" ? "m" : "")), dia = T.diatonicChords(k), i = Math.floor(Math.random() * 7), d = dia[i];
+        const wrong = App.shuffle(dia.filter((x, j) => j !== i)).slice(0, 3);
+        if (dir === "chord") return { item: k.mode + ":" + d.numeral, kind: "choice", ask: `Which chord is ${d.numeral} in ${T.keyName(k)}?`, answer: d.chord.symbol, choices: App.shuffle([d].concat(wrong)).map(x => x.chord.symbol),
+          render(box) { box.innerHTML = `<div class="big-sym">${esc(d.numeral)}</div><div class="spoken">in ${esc(T.keyName(k))}</div>`; },
+          explain: `${T.keyName(k)}: ${dia.map(x => x.numeral + " = " + x.chord.symbol).join(", ")}. Upper-case numerals are major, lower-case minor, ° diminished.` };
+        return { item: k.mode + ":" + d.numeral, kind: "choice", ask: `In ${T.keyName(k)}, ${d.chord.symbol} is which numeral?`, answer: d.numeral, choices: App.shuffle([d].concat(wrong)).map(x => x.numeral),
+          render(box) { box.innerHTML = `<div class="big-sym">${esc(d.chord.symbol)}</div><div class="spoken">in ${esc(T.keyName(k))}</div>`; },
+          explain: `${d.chord.symbol} is built on ${T.name(d.chord.root)}, the ${T.ordinal(i + 1)} note of ${T.keyName(k)}, so it's ${d.numeral}.` };
+      }
+    },
+    {
+      id: "degree", name: "Scale degrees", quiet: true, blurb: "The 6th note of A♭ major? The dominant of E minor? Know every key from the inside.",
+      options: [{ id: "mode", choices: [["major", "Major"], ["minor", "Minor"], ["both", "Both"]], def: "major" }, { id: "names", choices: [["numbers", "By number"], ["names", "By name (tonic, dominant…)"]], def: "numbers" }],
+      make() {
+        const modeOpt = opt("degree", "mode", "major"), mode = modeOpt === "both" ? pick(["major", "minor"]) : modeOpt, byName = opt("degree", "names", "numbers") === "names";
+        const k = T.parseKey(pick(KEYS12) + (mode === "minor" ? "m" : "")), notes = T.keyScale(k).notes, i = 1 + Math.floor(Math.random() * 6), n = notes[i];
+        const wrong = App.shuffle(notes.filter((x, j) => j !== i)).slice(0, 3), what = byName ? "the " + DEG_NAMES[i] : "the " + T.ordinal(i + 1) + " degree";
+        return { item: k.mode + ":" + (i + 1), kind: "choice", ask: `What is ${what} of ${T.keyName(k)}?`, answer: T.name(n), choices: App.shuffle([n].concat(wrong)).map(x => T.name(x)),
+          render(box) { box.innerHTML = `<div class="big-sym" style="font-size:clamp(30px,7vw,48px)">${esc(T.keyName(k))}</div><div class="spoken">${esc(what)}</div>`; },
+          explain: `${T.keyName(k)} runs ${notes.map(x => T.name(x)).join(" ")}. Degree ${i + 1} (${DEG_NAMES[i]}) is ${T.name(n)}.` };
+      }
+    },
+    {
+      id: "rhythm", name: "Rhythm values", quiet: true, blurb: "How many beats is that note? Which value finishes the bar? Reading rhythm without a sound.",
+      options: [{ id: "mode", choices: [["value", "Name the value"], ["complete", "Complete the bar"]], def: "value" }],
+      make() {
+        if (opt("rhythm", "mode", "value") === "value") {
+          const v = pick(VALUES), b4 = T.parsePitch("B4");
+          return { item: "v" + v[0], kind: "choice", ask: "How many beats is this note worth (in 4/4)?", answer: v[2], choices: App.shuffle(VALUES.map(x => x[2])).slice(0, 7).filter((x, i, a) => a.indexOf(x) === i),
+            many: true, render(box) { box.innerHTML = `<div class="paper center" style="max-width:300px;margin:0 auto" id="qStaff"></div>`; W.Staff.leadSheet($("#qStaff"), { sig: 0, time: [4, 4], bars: [{ notes: [{ p: b4, d: v[0] }].concat(v[0] < 4 ? [{ p: null, d: 4 - v[0] }] : []) }] }, { width: 280, space: 11, perLine: 1 }); },
+            explain: `A ${v[1].toLowerCase()} lasts ${v[2]}. A dot adds half the value again; each flag halves it.` };
+        }
+        const beats = pick([3, 4]), b4 = T.parsePitch("B4"), pool = [2, 1.5, 1, 0.5, 0.5, 1, 1, 2];
+        let notes = [], sum = 0;
+        while (sum < beats - 0.5) { const d = pick(pool.filter(x => x <= beats - 0.5 - sum)); if (!d) break; notes.push(d); sum += d; }
+        const missing = +(beats - sum).toFixed(2), miss = VALUES.filter(v => v[0] === missing)[0] || VALUES[4];
+        const choices = App.shuffle([miss].concat(App.shuffle(VALUES.filter(v => v[0] !== missing)).slice(0, 3))).map(v => v[1]);
+        return { item: "c" + missing, kind: "choice", ask: `This ${beats}/4 bar is missing its last note. Which value completes it?`, answer: miss[1], choices: choices,
+          render(box) { box.innerHTML = `<div class="paper center" style="max-width:320px;margin:0 auto" id="qStaff"></div>`; W.Staff.leadSheet($("#qStaff"), { sig: 0, time: [beats, 4], bars: [{ notes: notes.map(d => ({ p: b4, d: d })).concat([{ p: b4, d: missing, cls: "hl" }]) }] }, { width: 300, space: 11, perLine: 1 }); },
+          explain: `The written notes add up to ${sum} beat${sum === 1 ? "" : "s"}; a ${beats}/4 bar needs ${beats}, so the last note is worth ${missing}: a ${miss[1].toLowerCase()}.` };
+      }
+    },
+    {
+      id: "pos", name: "Trombone: which position?", quiet: true, blurb: "A note in bass clef. Where does the slide go? The seven positions, one note at a time.",
+      options: [{ id: "range", choices: [["easy", "B♭2 to F4"], ["all", "Whole range"]], def: "easy" }],
+      make() {
+        const easy = opt("pos", "range", "easy") === "easy", lo = easy ? 46 : 34, hi = easy ? 65 : 72;
+        let m, ps; do { m = lo + Math.floor(Math.random() * (hi - lo + 1)); ps = W.Tbn.positions(m); } while (!ps.length);
+        const p = T.spellIn(m, null, "flat"), main = ps[0], ORD = W.Tbn.ORD, ok = ps.filter(x => x.partial !== 7).map(x => ORD[x.pos]);
+        return { item: String(m), kind: "choice", ask: "Which slide position plays this note?", answer: ORD[main.pos], accept: ok, choices: [1, 2, 3, 4, 5, 6, 7].map(i => ORD[i]), many: true,
+          render(box) { box.innerHTML = `<div class="paper center" style="max-width:260px;margin:0 auto" id="qStaff"></div>`; W.Staff.render($("#qStaff"), { clef: "bass", width: 230, space: 13, items: [{ pitches: [p] }] }); },
+          explain: `${T.pitchName(p)} is ${ORD[main.pos]} position (${main.partial}${main.partial === 2 ? "nd" : main.partial === 3 ? "rd" : "th"} partial)${ps.length > 1 ? ", or " + ps.slice(1).map(x => ORD[x.pos] + (x.partial === 7 ? " (flat 7th partial)" : "")).join(", ") : ""}. Each position out is a half step lower.` };
+      }
+    },
+    {
       id: "quality", name: "Ear: chord quality", blurb: "Major or minor? Dominant or major seventh? Hear the colour.",
       options: [{ id: "level", choices: [["triads", "Four triads"], ["sevenths", "+ Sevenths"]], def: "triads" }],
       make() {
@@ -140,21 +219,21 @@
       inputKb = new W.Keyboard($("#qInput"), { from: 48, to: 84, minKey: 22, toggle: true, labels: state.settings.labels });
       W.activeKeyboard = inputKb;
     }
-    if (q.auto && q.hear) setTimeout(q.hear, 250);
+    if (q.auto && q.hear && !quietRun) setTimeout(q.hear, 250);
   }
 
   function grade(given) {
     if (answered) return; answered = true;
-    const ok = given === q.answer, ms = performance.now() - t0;
+    const ok = given === q.answer || (q.accept && q.accept.indexOf(given) >= 0), ms = performance.now() - t0;
     session.n++; if (ok) session.ok++;
     const st = App.record(cur.id, q.item, ok, ms);
-    $$("#qAnswer .choice").forEach(b => { b.disabled = true; const v = b.getAttribute("data-v"); if (v === q.answer) b.classList.add("right"); else if (v === given) b.classList.add("wrong"); });
+    $$("#qAnswer .choice").forEach(b => { b.disabled = true; const v = b.getAttribute("data-v"); if (v === q.answer || (q.accept && q.accept.indexOf(v) >= 0)) b.classList.add("right"); else if (v === given) b.classList.add("wrong"); });
     if (q.kind === "keys" && inputKb) {
       const want = q.chord.pcs, picked = inputKb.selected.slice();
       const base = 48 + q.chord.root.pc, shape = T.chordPitches(q.chord, 3, 0).map(p => p.midi + (p.midi < 48 ? 12 : 0)).map(m => (m > 84 ? m - 12 : m));
       inputKb.setSelected([]);
       inputKb.mark(shape.map((m, i) => ({ midi: m, cls: "good", label: T.name(q.chord.notes[i]) })).concat(picked.filter(m => want.indexOf(T.mod(m, 12)) < 0).map(m => ({ midi: m, cls: "bad", label: "×" }))));
-      App.playChord(shape);
+      if (!quietRun) App.playChord(shape);
       $("#qCheck").disabled = true;
     }
     if (q.reveal) q.reveal($("#qPrompt"), ok);
@@ -164,10 +243,12 @@
     if (ok && q.kind !== "keys" && !q.reveal) nextTimer = setTimeout(next, 1500);
   }
 
-  function openDrill(id) {
+  function openDrill(id, params) {
     cur = drillById(id) || DRILLS[0]; session = { n: 0, ok: 0 }; lastItem = "";
+    quietRun = params.quiet === "1" || !!cur.quiet;
+    if (params.clef && cur.options.some(o => o.id === "clef")) (state.train[cur.id] = state.train[cur.id] || {}).clef = params.clef;
     $("#trainHome").hidden = true; $("#trainRun").hidden = false;
-    $("#qName").textContent = cur.name;
+    $("#qName").innerHTML = esc(cur.name) + (quietRun ? ' <span class="quiet-badge" style="vertical-align:middle;margin-left:6px"><i></i>Quiet</span>' : "");
     $("#qOpts").innerHTML = cur.options.map(o => `<div class="seg" data-opt="${o.id}">${o.choices.map(c => `<button data-val="${c[0]}" class="${opt(cur.id, o.id, o.def) === c[0] ? "on" : ""}">${esc(c[1])}</button>`).join("")}</div>`).join("");
     W.Midi.onNote = (note, on) => {
       if (!on || answered || !q) return;
@@ -184,19 +265,21 @@
   }
 
   function paintHome() {
-    $("#drillGrid").innerHTML = DRILLS.map(d => {
-      const s = state.stats[d.id], acc = App.accuracy(d.id), weak = App.weakItems(d.id, 1)[0];
+    const tile = d => {
+      const s = state.stats[d.id], acc = App.accuracy(d.id);
       return `<button class="tile" data-drill="${d.id}"><b>${esc(d.name)}</b><span>${esc(d.blurb)}</span>
         <div class="acc">${s ? `${acc}% over ${s.n} · best streak ${s.best}` : "Not tried yet"}</div>${s ? `<div class="meter"><i style="width:${acc}%"></i></div>` : ""}</button>`;
-    }).join("");
+    };
+    $("#drillGrid").innerHTML = `<div class="group-label">With sound</div><div class="drills">${DRILLS.filter(d => !d.quiet).map(tile).join("")}</div>
+      <div class="group-label" style="margin-top:22px">Quiet: nothing to hear, study anywhere</div><div class="drills">${DRILLS.filter(d => d.quiet).map(tile).join("")}</div>`;
   }
 
   W.views.train = {
     mount(el) {
       el.innerHTML = `
         <div id="trainHome">
-          <div class="hero"><h1>Train</h1><p>Five focused minutes beats an hour of drifting. Each drill quietly brings back the things you miss.</p></div>
-          <div class="drills" id="drillGrid"></div>
+          <div class="hero"><h1>Train</h1><p>Five focused minutes beats an hour of drifting. Each drill quietly brings back the things you miss. The second group needs no sound at all.</p></div>
+          <div id="drillGrid"></div>
         </div>
         <div id="trainRun" hidden>
           <div class="quiz-head"><button class="btn ghost small" id="qBack">‹ All drills</button><div class="score" id="qScore"></div></div>
@@ -210,7 +293,7 @@
         </div>`;
       el.addEventListener("click", e => {
         let b;
-        if ((b = e.target.closest("[data-drill]"))) { A.init(); App.go("train", { d: b.getAttribute("data-drill") }); }
+        if ((b = e.target.closest("[data-drill]"))) { if (!drillById(b.getAttribute("data-drill")).quiet) A.init(); App.go("train", { d: b.getAttribute("data-drill") }); }
         else if (e.target.closest("#qBack")) App.go("train");
         else if (e.target.closest("#qNext")) next();
         else if ((b = e.target.closest(".choice")) && !b.disabled) grade(b.getAttribute("data-v"));
@@ -228,7 +311,7 @@
         else if (e.key === " " && q.hear && !answered) { e.preventDefault(); q.hear(); }
       });
     },
-    show(params) { if (params.d && drillById(params.d)) openDrill(params.d); else { if (cur) closeDrill(); else paintHome(); } },
+    show(params) { if (params.d && drillById(params.d)) openDrill(params.d, params); else { if (cur) closeDrill(); else paintHome(); } },
     hide() { clearTimeout(nextTimer); W.Midi.onNote = null; }
   };
 })();

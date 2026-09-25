@@ -8,12 +8,19 @@
   /* ---------- library ---------- */
   const userCharts = () => state.charts;
   function find(id) {
-    return W.SONGS.filter(s => s.id === id)[0] || W.CHARTS.filter(c => c.id === id)[0] || userCharts().filter(c => c.id === id)[0] || null;
+    return W.Songs.byId(id) || W.CHARTS.filter(c => c.id === id)[0] || userCharts().filter(c => c.id === id)[0] || null;
   }
   const Sheet = W.Sheet = {
     titleOf: id => { const s = find(id); return s ? s.title : null; },
     // Bars of a built-in tune with its melody parsed: [{beats, notes: [{p, d}], slots: [{beat, beats, text, chord}]}]
     parseSong: song => parseSongBars(song),
+    // A song with a melody (from Clef, or pasted in). Saves it and shows it.
+    openSong(song) {
+      const rec = W.Songs.save(song);
+      state.sheet.id = rec.id; App.saveNow();
+      if (App.current === "sheet") view.show({}); else App.go("sheet");
+      return rec;
+    },
     // Used by the tutor after a scan, and by the Keys view.
     open(chart) {
       const id = chart.id || "c" + Date.now().toString(36);
@@ -49,19 +56,21 @@
     return bars;
   }
   function parseSongBars(song) {
+    const full = W.Songs.beatsPerBar(song);
     return song.bars.map(b => {
-      const beats = b.beats || song.time[0];
-      const notes = b.n.split(/\s+/).filter(Boolean).map(tok => { const m = tok.split(":"), d = m[1] ? parseFloat(m[1]) : 1; return { p: m[0] === "r" ? null : T.parsePitch(m[0]), d: d }; });
+      const beats = b.beats || full;
+      const notes = b.n.split(/\s+/).filter(Boolean).map(tok => { const m = tok.split(":"), d = m[1] ? parseFloat(m[1]) : 1; return { p: m[0] === "r" ? null : T.parsePitch(m[0].split("+")[0]), d: d }; });
       const toks = (b.c || "").split(/\s+/).filter(Boolean).map(tk => { const m = tk.split("@"); return { text: m[0], beat: m[1] ? parseFloat(m[1]) : 0 }; });
-      const slots = toks.map((t, i) => ({ beat: t.beat, beats: (toks[i + 1] ? toks[i + 1].beat : beats) - t.beat, text: t.text, chord: T.parseChord(t.text) }));
-      return { beats: beats, notes: notes, slots: slots };
+      const slots = toks.map((t, i) => ({ beat: t.beat, beats: (toks[i + 1] ? toks[i + 1].beat : beats) - t.beat, text: t.text, chord: /^n\.?c\.?$/i.test(t.text) ? null : T.parseChord(t.text), nc: /^n\.?c\.?$/i.test(t.text) }));
+      const lh = b.l ? b.l.split(/\s+/).filter(Boolean).map(tok => { const m = tok.split(":"), d = m[1] ? parseFloat(m[1]) : 1; return { ps: m[0] === "r" ? [] : m[0].split("+").map(x => T.parsePitch(x)).filter(Boolean), d: d }; }) : null;
+      return { beats: beats, notes: notes, slots: slots, lh: lh, lyric: b.w || "" };
     });
   }
 
   function build() {
     const src = find(state.sheet.id) || W.SONGS[0];
     state.sheet.id = src.id;
-    const melody = !!src.bars, time = src.time || [4, 4];
+    const melody = !!src.bars, time = src.time || [4, 4], full = melody ? W.Songs.beatsPerBar(src) : time[0];
     const semis = state.sheet.transpose[src.id] || 0, level = state.sheet.simplify;
     let bars = melody ? parseSongBars(src) : parseChartText(src.text, time[0]);
 
@@ -83,13 +92,13 @@
           events.push({ i: s.i, bar: bi, slot: s, chord: s.play, written: s.written, start: start + s.beat, beats: s.beats });
         }
       });
-      if (semis) bar.notes.forEach(n => { if (n.p) n.p = T.transposePitch(n.p, key0.tonic, key.tonic, semis); });
+      if (semis) { bar.notes.forEach(n => { if (n.p) n.p = T.transposePitch(n.p, key0.tonic, key.tonic, semis); }); (bar.lh || []).forEach(n => { n.ps = n.ps.map(p => T.transposePitch(p, key0.tonic, key.tonic, semis)); }); }
       start += bar.beats;
     });
     // keep a transposed melody in a comfortable octave
     if (semis && melody) { const all = bars.reduce((a, b) => a.concat(b.notes.filter(n => n.p).map(n => n.p.midi)), []); const mid = (Math.min.apply(null, all) + Math.max.apply(null, all)) / 2; const shift = mid > 74 ? -12 : mid < 60 ? 12 : 0; if (shift) bars.forEach(b => b.notes.forEach(n => { if (n.p) n.p = T.spellMidi(n.p.midi + shift, n.p); })); }
 
-    doc = { src: src, id: src.id, title: src.title, by: src.by || "", about: src.about || "", melody: melody, mine: !!src.mine, time: time, bars: bars, events: events, total: start, key: key, key0: key0, semis: semis,
+    doc = { src: src, id: src.id, title: src.title, by: src.by || "", about: src.about || "", notes: src.notes || "", melody: melody, mine: !!src.mine, lh: melody && bars.some(b => b.lh && b.lh.length), time: time, full: full, bars: bars, events: events, total: start, key: key, key0: key0, semis: semis,
       tempo: (state.sheet.tempo && state.sheet.tempo[src.id]) || src.tempo || 92, pickup: bars.length && bars[0].beats < time[0] ? bars[0].beats : 0 };
     revoice();
     if (sel >= events.length) sel = 0;
@@ -100,8 +109,8 @@
   function stop() { if (clock) { clock.stop(); clock = null; } A.allOff(); paintTransport(); $$("#v-sheet .bar.now, #v-sheet .barbg.now").forEach(x => x.classList.remove("now")); }
   function play() {
     if (!A.init()) return;
-    const s = state.sheet, full = doc.time[0], countIn = doc.pickup ? full + (full - doc.pickup) : full;
-    const mel = []; doc.bars.forEach(b => { let t = b.start; b.notes.forEach(n => { if (n.p) mel.push({ start: t, d: n.d, midi: n.p.midi }); t += n.d; }); });
+    const s = state.sheet, full = doc.full, countIn = doc.pickup ? full + (full - doc.pickup) : full;
+    const mel = [], lh = []; doc.bars.forEach(b => { let t = b.start; b.notes.forEach(n => { if (n.p) mel.push({ start: t, d: n.d, midi: n.p.midi }); t += n.d; }); let tl = b.start; (b.lh || []).forEach(n => { if (n.ps.length) lh.push({ start: tl, d: n.d, midis: n.ps.map(p => p.midi) }); tl += n.d; }); });
     clock = new A.Clock({
       bpm: doc.tempo, beatsPerBar: full,
       onBeat: (i, time) => {
@@ -111,7 +120,8 @@
         if (g >= doc.total) { if (!s.loop) return false; g = g % doc.total; }
         const bar = doc.bars.filter(b => g >= b.start && g < b.start + b.beats)[0];
         if (s.click) A.click(time, bar && g === bar.start, true);
-        if (s.chords) doc.events.forEach(ev => { if (ev.start >= g && ev.start < g + 1) A.play(ev.voice.lh.concat(ev.voice.rh), { when: time + (ev.start - g) * spb, dur: Math.max(0.3, ev.beats * spb * 0.97), strum: 0.01, vel: doc.melody && s.melody ? 0.46 : 0.6 }); });
+        if (s.chords && doc.lh && state.sheet.written !== false) lh.forEach(n => { if (n.start >= g && n.start < g + 1) A.play(n.midis, { when: time + (n.start - g) * spb, dur: Math.max(0.2, n.d * spb * 0.95), strum: 0.008, vel: 0.5 }); });
+        else if (s.chords) doc.events.forEach(ev => { if (ev.start >= g && ev.start < g + 1) A.play(ev.voice.lh.concat(ev.voice.rh), { when: time + (ev.start - g) * spb, dur: Math.max(0.3, ev.beats * spb * 0.97), strum: 0.01, vel: doc.melody && s.melody ? 0.46 : 0.6 }); });
         if (s.melody) mel.forEach(n => { if (n.start >= g && n.start < g + 1) A.play([n.midi], { when: time + (n.start - g) * spb, dur: n.d * spb * 0.95, vel: 0.8 }); });
       },
       onTick: i => {
@@ -151,9 +161,9 @@
           const slot = b.slots.filter(s => s.chord && at >= s.beat && at < s.beat + s.beats)[0];
           return { p: n.p, d: n.d, cls: slot && slot.play.pcs.indexOf(n.p.pc) >= 0 ? "tone" : "" };
         });
-        return { beats: b.beats, notes: notes, chords: b.slots.filter(s => s.chord).map(s => ({ beat: s.beat, text: s.play.symbol, i: s.i })) };
+        return { beats: b.beats, notes: notes, lh: state.sheet.written === false ? null : b.lh, lyric: state.sheet.lyrics === false ? "" : b.lyric, chords: b.slots.filter(s => s.chord || s.nc).map(s => ({ beat: s.beat, text: s.chord ? s.play.symbol : "N.C.", i: s.chord ? s.i : -1 })) };
       }) };
-      W.Staff.leadSheet($("#shPaper"), song, { width: w, space: w < 480 ? 8 : 9.5 });
+      W.Staff.leadSheet($("#shPaper"), song, { width: w, space: w < 480 ? 8 : 9.5, lh: doc.lh && state.sheet.written !== false });
       $$("#shPaper .chord").forEach(x => x.classList.toggle("sel", +x.getAttribute("data-ci") === sel));
     });
   }
@@ -214,10 +224,12 @@
 
   function paintHeader() {
     const opt = (c, label) => `<option value="${esc(c.id)}" ${c.id === doc.id ? "selected" : ""}>${esc(label || c.title)}</option>`;
-    $("#shPick").innerHTML = `<optgroup label="Tunes with melody">${W.SONGS.map(s => opt(s)).join("")}</optgroup><optgroup label="Chord charts">${W.CHARTS.map(c => opt(c)).join("")}</optgroup>${userCharts().length ? `<optgroup label="My charts">${userCharts().map(c => opt(c)).join("")}</optgroup>` : ""}`;
+    const mineS = W.Songs.mine();
+    $("#shPick").innerHTML = `${mineS.length ? `<optgroup label="My songs">${mineS.map(s => opt(s)).join("")}</optgroup>` : ""}<optgroup label="Tunes with melody">${W.SONGS.map(s => opt(s)).join("")}</optgroup><optgroup label="Chord charts">${W.CHARTS.map(c => opt(c)).join("")}</optgroup>${userCharts().length ? `<optgroup label="My charts">${userCharts().map(c => opt(c)).join("")}</optgroup>` : ""}`;
     $("#shTitle").textContent = doc.title;
     $("#shBy").textContent = [doc.by, doc.time[0] + "/" + doc.time[1], T.keyName(doc.key) + (doc.semis ? " (transposed " + (doc.semis > 0 ? "+" : "") + doc.semis + ")" : ""), doc.bars.length - (doc.pickup ? 1 : 0) + " bars"].filter(Boolean).join(" · ");
-    $("#shAbout").textContent = doc.about;
+    $("#shAbout").innerHTML = esc(doc.about) + (doc.notes ? `<details class="more" style="margin-top:8px;border-top:0;padding-top:0"><summary>How to play it</summary><div class="body">${esc(doc.notes).replace(/\n+/g, "<br>")}</div></details>` : "");
+    $("#shWritten").hidden = !doc.lh; $("#shWritten").classList.toggle("on", state.sheet.written !== false);
     $$("#shVoicing button").forEach(b => b.classList.toggle("on", b.getAttribute("data-voicing") === state.sheet.voicing));
     $$("#shSimplify button").forEach(b => b.classList.toggle("on", b.getAttribute("data-simplify") === state.sheet.simplify));
     const ks = $("#shKey"), cur = (state.sheet.keys && state.sheet.keys[doc.id]) || "";
@@ -229,6 +241,14 @@
 
   function paintEditor() {
     const box = $("#shEdit"), src = doc.src;
+    if (doc.melody && doc.mine) {
+      box.innerHTML = `<span class="eyebrow">Edit this song</span>
+        <label class="field">Song text<textarea id="edSong" rows="10" autocapitalize="off" autocorrect="off" spellcheck="false">${esc(W.Songs.toText(src))}</textarea></label>
+        <p class="sub mt-s">One bar per line: <span class="mono">notes | chords | left hand</span>. Notes are <span class="mono">E4</span> (a beat) or <span class="mono">E4:.5</span> (half a beat), <span class="mono">r:1</span> is a rest, and <span class="mono">C3+E3+G3:2</span> strikes three notes together. A chord lands on beat one unless you say <span class="mono">G7@2</span>. Beats are quarter notes, so an eighth is .5 even in 6/8.</p>
+        <p class="sub" id="edProblems"></p>
+        <div class="row mt"><button class="btn small" id="edSongSave">Save</button><a class="btn ghost small" href="#/piano?learn=${encodeURIComponent(doc.id)}">Learn the melody</a><button class="btn ghost small" onclick="W.Tutor.open()">Ask Clef to fix a bar</button><button class="btn ghost small" id="edSongDel">Delete</button></div>`;
+      return;
+    }
     if (doc.melody) { box.innerHTML = `<span class="eyebrow">Make it yours</span><p class="sub">This tune is built in. Learn its melody note by note on the Piano page, or copy its chords into a chart of your own and change them.</p><div class="row mt"><a class="btn small" href="#/piano?learn=${encodeURIComponent(doc.id)}">Learn the melody</a><button class="btn ghost small" id="edCopy">Copy chords to a new chart</button><button class="btn ghost small" id="edNew">Blank chart</button></div>`; return; }
     box.innerHTML = `
       <span class="eyebrow">${doc.mine ? "Edit this chart" : "Chart text"}</span>
@@ -258,7 +278,7 @@
           <div class="row between"><div><h2 class="title" id="shTitle"></h2><p class="sub" id="shBy"></p></div>
             <div class="row gap-s"><div class="tempo" title="Transpose"><button data-tr="-1" aria-label="Transpose down">−</button><b style="min-width:74px;font-size:12.5px">Transpose</b><button data-tr="1" aria-label="Transpose up">+</button></div><select id="shKey" aria-label="Key"></select></div></div>
           <p class="sub mt-s" id="shAbout"></p>
-          <div id="shNotation" class="mt"><div class="paper" id="shPaper"></div><div class="row between mt-s"><span class="sub">Turn <b>Melody</b> off and play it yourself over the chords, or turn <b>Chords</b> off and comp under the tune.</span><button class="toggle" id="shTones" style="height:36px">Highlight chord tones</button></div></div>
+          <div id="shNotation" class="mt"><div class="paper" id="shPaper"></div><div class="row between mt-s"><span class="sub">Turn <b>Melody</b> off and play it yourself over the chords, or turn <b>Chords</b> off and comp under the tune.</span><div class="row gap-s"><button class="toggle" id="shWritten" style="height:36px" hidden>Written left hand</button><button class="toggle" id="shTones" style="height:36px">Highlight chord tones</button></div></div></div>
           <div class="chart mt" id="shChart"></div>
           <div class="row mt-s gap-s" id="shCads"></div>
         </div>
@@ -283,6 +303,7 @@
       $("#shPlay").addEventListener("click", () => (clock && clock.running()) ? stop() : play());
       [["shLoop", "loop"], ["shClick", "click"], ["shMel", "melody"], ["shChords", "chords"]].forEach(p => $("#" + p[0]).addEventListener("click", () => { state.sheet[p[1]] = !state.sheet[p[1]]; App.save(); paintTransport(); }));
       $("#shTones").addEventListener("click", () => { state.sheet.tones = state.sheet.tones === false; App.save(); paintHeader(); paintNotation(); });
+      $("#shWritten").addEventListener("click", () => { state.sheet.written = state.sheet.written === false; App.save(); paintHeader(); paintNotation(); });
       el.addEventListener("click", e => {
         let b;
         if ((b = e.target.closest("[data-tempo]"))) { doc.tempo = Math.max(40, Math.min(220, doc.tempo + (+b.getAttribute("data-tempo")))); state.sheet.tempo[doc.id] = doc.tempo; if (clock) clock.job.bpm = doc.tempo; App.save(); paintTransport(); }
@@ -295,6 +316,13 @@
           Sheet.open(rec); App.toast("Saved to My charts");
         }
         else if (e.target.id === "edNew") Sheet.open({ title: "My chart", text: "| C | Am | F | G |" });
+        else if (e.target.id === "edSongSave") {
+          const r = W.Songs.fromText($("#edSong").value);
+          if (!r.song) { $("#edProblems").textContent = r.problems.join(" "); return; }
+          r.song.id = doc.id; W.Songs.save(r.song); refresh(true); App.toast(r.problems.length ? "Saved, with " + r.problems.length + " bar" + (r.problems.length > 1 ? "s" : "") + " mended" : "Song saved");
+          if (r.problems.length) $("#edProblems").textContent = r.problems.join(" ");
+        }
+        else if (e.target.id === "edSongDel") { const b2 = e.target; if (b2.dataset.sure) { W.Songs.remove(doc.id); state.sheet.id = "ode"; refresh(); App.toast("Song deleted"); } else { b2.dataset.sure = "1"; b2.textContent = "Tap again to delete"; } }
         else if (e.target.id === "edCopy") Sheet.open({ title: doc.title + " (my chords)", time: doc.time, tempo: doc.tempo, key: T.name(doc.key.tonic, true) + (doc.key.mode === "minor" ? "m" : ""), text: doc.bars.filter(b => b.beats >= doc.time[0]).map((b, i) => "| " + (b.slots.map(s => s.written ? s.written.ascii : s.text).join(" ") || "%") + ((i + 1) % 4 === 0 ? " |\n" : " ")).join("").trim() + (doc.bars.length % 4 ? " |" : "") });
         else if (e.target.id === "edDel") { const b2 = e.target; if (b2.dataset.sure) { state.charts = App.state.charts = userCharts().filter(c => c.id !== doc.id); state.sheet.id = "ode"; refresh(); App.toast("Chart deleted"); } else { b2.dataset.sure = "1"; b2.textContent = "Tap again to delete"; } }
       });

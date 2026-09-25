@@ -34,9 +34,11 @@
   /* ---------- saved state ---------- */
   const STORE = "ws.v1";
   const defaults = () => ({
-    settings: { labels: "c", volume: 0.8, midiSound: false, instrument: "grand", room: "room" },
+    settings: { labels: "c", volume: 0.8, midiSound: false, instrument: "grand", room: "room", muted: false },
     play: { zoom: "m", mode: "free", song: "ode", take: null, best: {} },
-    stats: {}, log: {}, charts: [],
+    stats: {}, log: {}, charts: [], songs: [],
+    study: { unit: "maj", root: "C", cards: {}, chords: {}, seen: {} },
+    tbn: { note: 58, drone: 58, scale: "Bb", scaleType: "major" },
     sheet: { id: "ode", voicing: "lh", simplify: "none", loop: true, click: true, melody: true, chords: true, tempo: {}, transpose: {} },
     metro: { bpm: 92, beats: 4, accent: true },
     chords: { root: "C", q: "maj", inv: 0 },
@@ -75,7 +77,7 @@
   function timerPaint() {
     const b = $("#timerBtn"), sec = dayLog().sec;
     b.classList.toggle("live", timer.on);
-    $("#timerTxt").textContent = timer.on ? Math.floor(sec / 60) + ":" + pad(sec % 60) : (sec >= 60 ? mins(sec) + " min today" : "Start practice");
+    $("#timerTxt").textContent = timer.on ? Math.floor(sec / 60) + ":" + pad(sec % 60) : (sec >= 60 ? mins(sec) + " min" + (window.innerWidth < 480 ? "" : " today") : (window.innerWidth < 480 ? "Practice" : "Start practice"));
   }
   App.timerToggle = () => {
     timer.on = !timer.on;
@@ -105,6 +107,10 @@
   };
 
   /* ---------- sound helpers ---------- */
+  // Quiet mode: everything the app would play is silenced, so you can study anywhere. The speaker button at the top.
+  App.setMuted = m => { state.settings.muted = !!m; A.setMuted(!!m); App.saveNow(); paintMute(); if (m) App.toast("Quiet mode: sound off"); };
+  function paintMute() { const b = $("#muteBtn"); if (!b) return; b.classList.toggle("muted", !!state.settings.muted); b.setAttribute("aria-pressed", String(!!state.settings.muted)); b.title = state.settings.muted ? "Sound is off (quiet mode). Tap for sound." : "Sound is on. Tap for quiet mode."; }
+  App.paintMute = paintMute;
   App.playChord = (midis, opts) => { const o = opts || {}; A.play(midis.slice().sort((a, b) => a - b), { dur: o.dur || 1.6, strum: o.arp ? 0.2 : 0.018, vel: o.vel }); };
 
   /* ---------- metronome ---------- */
@@ -159,6 +165,8 @@
     App.current = name; document.body.setAttribute("data-view", name);
     $$(".view").forEach(v => { v.hidden = v.id !== "v-" + name; });
     $$("#tabs a").forEach(a => a.classList.toggle("on", a.getAttribute("data-v") === name));
+    const tabs = $("#tabs"), onTab = $("#tabs a.on");
+    if (onTab && window.innerWidth < 900 && tabs.scrollWidth > tabs.clientWidth) { const want = onTab.offsetLeft - (tabs.clientWidth - onTab.offsetWidth) / 2; tabs.scrollTo({ left: Math.max(0, want), behavior: "smooth" }); }
     const v = W.views[name], el = $("#v-" + name);
     if (!v.mounted) { v.mount(el); v.mounted = true; }
     if (v.show) v.show(params);
@@ -167,6 +175,8 @@
 
   App.start = () => {
     A.setVolume(state.settings.volume);
+    A.setMuted(!!state.settings.muted); paintMute();
+    $("#muteBtn").addEventListener("click", () => App.setMuted(!state.settings.muted));
     A.setInstrument(A.INSTRUMENTS.some(i => i.id === state.settings.instrument) ? state.settings.instrument : "grand");
     A.setRoom(state.settings.room);
     W.Midi.sound = !!state.settings.midiSound;
@@ -229,14 +239,16 @@
       const untouched = drills.filter(d => App.accuracy(d.id) == null)[0];
       const drill = untouched || weakest;
       const kq = { key: T.keyShort(k).replace("♯", "#").replace("♭", "b") };
+      const school = W.School ? W.School.next() : null;
       const plan = [
         { id: "scale", what: T.keyName(k) + " scale", sub: "Hands separate, then together. Slow enough to be even.", min: 3, href: "#/keys?key=" + encodeURIComponent(kq.key) },
+        { id: "school", what: school ? "Chord school: " + school.name : "Chord school", sub: school ? school.sub : "Learn each chord type from the ground up, in every key.", min: 4, href: "#/study" + (school ? "?unit=" + school.id : "") },
         { id: "chords", what: "Primary chords in " + T.keyShort(k), sub: primary.slice(0, 3).map(d => d.chord.symbol).join(" · ") + ". Root position, then each inversion.", min: 4, href: "#/keys?key=" + encodeURIComponent(kq.key) },
         { id: "sheet", what: "Lead sheet: " + sheetTitle, sub: "Voicing: " + voicing.name.toLowerCase() + ". Loop it with the click on.", min: 8, href: "#/sheet" },
         { id: "drill", what: drill ? drill.name : "Note reading", sub: "Twenty questions. Accuracy first, speed second.", min: 3, href: "#/train" + (drill ? "?d=" + drill.id : "") }
       ];
       el.innerHTML = `
-        <div class="hero"><h1>${hello}. <em>Let's play.</em></h1><p>${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}. One key a day, around the circle of fifths.</p></div>
+        <div class="hero"><h1>${hello}. <em>Let's play.</em></h1><p>${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}. One key a day, around the circle of fifths.${state.settings.muted ? " Quiet mode is on." : ""}</p></div>
         <div class="stats">
           <div class="stat ${streak ? "hot" : ""}"><b>${streak}</b><span>day streak</span></div>
           <div class="stat"><b>${mins(log.sec)}</b><span>min today</span></div>
@@ -270,6 +282,10 @@
         </div>
         <div class="mt-l"><span class="eyebrow">Jump in</span></div>
         <div class="quick mt-s">
+          <a class="tile" href="#/study"><b>Chord school</b><span>Every chord type from the ground up: what it is, how to build it, play it in all twelve keys.</span></a>
+          <button class="tile" onclick="W.Tutor.open('write')"><b>Write out a song</b><span>Name a song and the part you want (the chorus, that TikTok sound) and Clef puts it on the staff.</span></button>
+          <a class="tile" href="#/study?tab=lessons"><b>Study, no sound</b><span>Lessons, flashcards and silent drills for the bus, the library, or a quiet house.</span></a>
+          <a class="tile" href="#/trombone"><b>Trombone</b><span>Slide positions, a tuner that listens, long-tone drones and bass-clef reading.</span></a>
           <a class="tile" href="#/piano"><b>Piano</b><span>Just play: a real grand, a sustain pedal, and every chord named as you play it.</span></a>
           <a class="tile" href="#/piano?learn=${encodeURIComponent(state.play.song || "ode")}"><b>Learn a melody</b><span>Woodshed lights each note and plays the chords under you.</span></a>
           <a class="tile" href="#/sheet"><b>Lead sheets</b><span>Decode the chord symbols over a melody and hear how to voice them.</span></a>
@@ -277,7 +293,6 @@
           <a class="tile" href="#/keys"><b>Circle of fifths</b><span>Signatures, scales with fingering, and the chords in each key.</span></a>
           <a class="tile" href="#/train"><b>Drills</b><span>Note reading, key signatures, chord spelling, ear training.</span></a>
           <button class="tile" onclick="W.Tutor.open('scan')"><b>Scan sheet music</b><span>Photograph a page and have Clef break it down.</span></button>
-          <a class="tile" href="#/tools"><b>Metronome</b><span>Tap tempo, time signatures, and a MIDI keyboard hookup.</span></a>
         </div>`;
       App.paper($("#kodStaff"), w => W.Staff.render($("#kodStaff"), { clef: "treble", sig: k.sig, width: Math.min(w, 210), space: 9, items: [] }));
       const kb = new W.Keyboard($("#codKb"), { from: 48, to: 83, fit: true, labels: "none" });
@@ -322,12 +337,13 @@
             </div>
             <div class="card">
               <span class="eyebrow">Sound &amp; keys</span>
-              <label class="field">Piano<select id="instSel">${A.INSTRUMENTS.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join("")}</select></label>
+              <label class="field">Sound<select id="instSel">${A.FAMILIES.map(f => `<optgroup label="${esc(f[1])}">${A.INSTRUMENTS.filter(i => i.family === f[0]).map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join("")}</optgroup>`).join("")}</select></label>
               <p class="sub mt-s" id="instNote"></p>
               <div class="row mt"><span class="sub">Room</span><div class="seg" id="roomSeg">${A.ROOMS.map(r => `<button data-room="${r[0]}">${r[1]}</button>`).join("")}</div></div>
               <label class="field mt">Volume<input type="range" id="vol" min="0" max="1" step="0.01"></label>
+              <div class="row mt"><label class="switch"><input type="checkbox" id="quietSw"> Quiet mode (no sound at all)</label></div>
               <div class="row mt"><span class="sub">Key labels</span><div class="seg" id="lblSeg"><button data-l="c">C only</button><button data-l="all">All white keys</button><button data-l="none">None</button></div></div>
-              <div class="row mt"><button class="btn ghost small" id="dlAll">Keep every piano offline</button><span class="sub" id="dlNote"></span></div>
+              <div class="row mt"><button class="btn ghost small" id="dlAll">Keep every sound offline</button><span class="sub" id="dlNote"></span></div>
               <p class="sub mt">On a computer the home row plays notes: <span class="mono">A S D F G H J K</span> are the white keys from C, <span class="mono">W E T Y U</span> the black keys, <span class="mono">Z</span> / <span class="mono">X</span> shift the octave. On the Piano page the <span class="mono">space bar</span> is the sustain pedal.</p>
             </div>
             <div class="card">
@@ -337,7 +353,7 @@
             </div>
             <div class="card">
               <span class="eyebrow">About</span>
-              <p class="prose">Woodshed runs entirely in your browser and works offline once loaded. Your progress is stored on this device only. The grand piano is the <a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener">Salamander Grand</a> by Alexander Holm (CC BY 3.0), a Yamaha C5; the upright is <a href="https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html" target="_blank" rel="noopener">Upright Piano KW</a> from FreePats (CC0), a Kawai. Notation glyphs come from <a href="https://github.com/steinbergmedia/bravura" target="_blank" rel="noopener">Bravura</a> (SIL Open Font License). “Woodshedding” is musician slang for shutting yourself away to practice until it's right.</p>
+              <p class="prose">Woodshed runs entirely in your browser and works offline once loaded. Your progress is stored on this device only. The grand piano is the <a href="https://archive.org/details/SalamanderGrandPianoV3" target="_blank" rel="noopener">Salamander Grand</a> by Alexander Holm (CC BY 3.0), a Yamaha C5; the upright is <a href="https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html" target="_blank" rel="noopener">Upright Piano KW</a> from FreePats (CC0), a Kawai. The harpsichord, celesta, music box and vibraphone come from the <a href="https://github.com/gleitz/midi-js-soundfonts" target="_blank" rel="noopener">FluidR3 soundfont</a> (CC BY 3.0) and the trombone from <a href="https://github.com/sgossner/VSCO-2-CE" target="_blank" rel="noopener">VSCO 2 Community Edition</a> (CC0). Notation glyphs come from <a href="https://github.com/steinbergmedia/bravura" target="_blank" rel="noopener">Bravura</a> (SIL Open Font License). “Woodshedding” is musician slang for shutting yourself away to practice until it's right.</p>
             </div>
           </div>
         </div>`;
@@ -356,7 +372,7 @@
       $("#dlAll").addEventListener("click", () => {
         const ids = A.INSTRUMENTS.filter(i => i.set).map(i => i.id);
         $("#dlNote").textContent = "Downloading…";
-        Promise.all(ids.map(id => A.cache(id))).then(bad => { $("#dlNote").textContent = bad.some(n => n) ? "Some sounds didn't download. Try again with a connection." : "Every piano is saved on this device."; });
+        Promise.all(ids.map(id => A.cache(id))).then(bad => { $("#dlNote").textContent = bad.some(n => n) ? "Some sounds didn't download. Try again with a connection." : "Every sound is saved on this device (about 8 MB)."; });
       });
       $("#mGo").addEventListener("click", () => metro.toggle());
       $("#mTap").addEventListener("click", App.tapTempo);
@@ -365,6 +381,7 @@
       $("#vol").addEventListener("input", e => { state.settings.volume = +e.target.value; A.setVolume(+e.target.value); App.save(); });
       $("#vol").addEventListener("change", () => A.play([60, 64, 67], { dur: 0.8 }));
       $("#midiSound").addEventListener("change", e => { state.settings.midiSound = W.Midi.sound = e.target.checked; App.save(); });
+      $("#quietSw").addEventListener("change", e => App.setMuted(e.target.checked));
       $("#midiGo").addEventListener("click", () => W.Midi.connect().then(() => this.paintMidi()).catch(err => { $("#midiStatus").textContent = err.message || "MIDI access was refused."; }));
       $("#resetStats").addEventListener("click", e => {
         const b = e.currentTarget;
@@ -396,7 +413,7 @@
     },
     show() {
       this.paintMetro(); this.paintMidi(); this.paintSound();
-      $("#vol").value = state.settings.volume; $("#midiSound").checked = !!state.settings.midiSound;
+      $("#vol").value = state.settings.volume; $("#midiSound").checked = !!state.settings.midiSound; $("#quietSw").checked = !!state.settings.muted;
       $$("#lblSeg button").forEach(b => b.classList.toggle("on", b.getAttribute("data-l") === state.settings.labels));
       const days = Object.keys(state.log).filter(k => practiced(state.log[k])).length;
       const total = Object.keys(state.log).reduce((s, k) => s + (state.log[k].sec || 0), 0);

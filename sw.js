@@ -13,7 +13,8 @@ const SAMPLE_CACHE = 'woodshed-samples-1';
 const PRECACHE = [
   './', './index.html', './manifest.json', './css/app.css',
   './js/theory.js', './js/glyphs.js', './js/staff.js', './js/audio.js', './js/keyboard.js', './js/songs.js',
-  './js/app.js', './js/view-chords.js', './js/view-keys.js', './js/view-sheet.js', './js/view-train.js', './js/view-play.js', './js/tutor.js',
+  './js/app.js', './js/view-chords.js', './js/view-keys.js', './js/view-sheet.js', './js/view-train.js', './js/view-play.js',
+  './js/view-study.js', './js/tuner.js', './js/view-trombone.js', './js/tutor.js',
   './fonts/accidentals.otf', './icons/icon-192.png', './icons/icon-512.png'
 ];
 

@@ -164,13 +164,18 @@
   };
 
   /* ---------- lead sheet: melody on a treble staff, chord symbols above, several systems ----------
-     song: { sig, time: [beats, unit], bars: [{ notes: [{p: pitch|null, d: beats, cls}], chords: [{beat, text, i}] , beats? }] }
-     opts: { space, width, perLine, noTime (a window that starts mid-tune) }. Chord symbols carry data-ci so the caller can make them clickable. */
+     song: { sig, time: [beats, unit], bars: [{ notes: [{p: pitch|null, d: beats, cls}], chords: [{beat, text, i}], lh: [{ps: [pitch], d, cls}], beats? }] }
+     Beats are quarter notes whatever the time signature (a 6/8 bar holds 3). A bar with `lh` gets a bass staff under
+     the treble one (every system does, once any bar has one).
+     opts: { space, width, perLine, noTime (a window that starts mid-tune), lh: force the bass staff }.
+     Chord symbols carry data-ci so the caller can make them clickable. */
   S.leadSheet = function (el, song, opts) {
     var o = opts || {}, s = o.space || 9, width = Math.max(260, o.width || el.clientWidth || 340);
-    var full = song.time[0], perLine = o.perLine || (width > 900 ? 4 : width > 560 ? 3 : 2);
+    var full = song.time[0] * 4 / (song.time[1] || 4), perLine = o.perLine || (width > 900 ? 4 : width > 560 ? 3 : 2);
+    var withLh = !!o.lh || song.bars.some(function (b) { return b.lh && b.lh.length; });
     var smap = sigMap(song.sig), out = [], y = 0;
     var bars = song.bars, idx = 0, sys = 0;
+    var x0 = withLh ? 1.6 * s : 0.4 * s, xEnd = width - 0.4 * s;
     while (idx < bars.length) {
       var showTime = sys === 0 && !o.noTime, pre = preambleWidth(s, song.sig, showTime ? song.time : null) + 0.9 * s;
       var group = [], weight = 0;
@@ -178,43 +183,64 @@
         var b = bars[idx], beats = b.beats || full; group.push({ bar: b, i: idx, w: Math.max(0.45, beats / full) }); weight += Math.max(0.45, beats / full); idx++;
       }
       // highest and lowest things on this system decide its height
-      var hi = 8, lo = 0;
-      group.forEach(function (g) { g.bar.notes.forEach(function (n) { if (n.p) { var st = S.stepOf(n.p, "treble"); hi = Math.max(hi, st + (st < 4 ? 7 : 0)); lo = Math.min(lo, st - (st >= 4 ? 7 : 0)); } }); });
+      var hi = 8, lo = 0, bhi = 8, blo = 0;
+      group.forEach(function (g) {
+        g.bar.notes.forEach(function (n) { if (n.p) { var st = S.stepOf(n.p, "treble"); hi = Math.max(hi, st + (st < 4 ? 7 : 0)); lo = Math.min(lo, st - (st >= 4 ? 7 : 0)); } });
+        (g.bar.lh || []).forEach(function (n) { (n.ps || []).forEach(function (p) { var st = S.stepOf(p, "bass"); bhi = Math.max(bhi, st + (st < 4 ? 7 : 0)); blo = Math.min(blo, st - (st >= 4 ? 7 : 0)); }); });
+      });
       var st = { clef: "treble", y0: y + 3.4 * s + (Math.max(hi, 11) - 8) * s / 2 + 4 * s };
-      var x0 = 0.4 * s, xEnd = width - 0.4 * s;
-      staffLines(out, st, s, x0, xEnd);
-      preamble(out, st, s, x0 + 0.5 * s, song.sig, showTime ? song.time : null);
+      var staves = [st];
+      if (withLh) staves.push({ clef: "bass", y0: st.y0 - Math.min(lo, -3.5) * s / 2 + 1.2 * s + (Math.max(bhi, 9) - 8) * s / 2 + 4 * s });
+      staves.forEach(function (sv) { staffLines(out, sv, s, x0, xEnd); preamble(out, sv, s, x0 + 0.5 * s, song.sig, showTime ? song.time : null); });
+      if (withLh) {
+        var topY = st.y0 - 4 * s, botY = staves[1].y0;
+        out.push(line(x0, topY, x0, botY, Math.max(1.2, s * 0.14)));
+        out.push(glyph("brace", x0 - 0.35 * s - gw("brace", s) * 1.7, botY, (botY - topY) / 4, "ink", 1.7 * 4 * s / (botY - topY)));
+      }
       var bx = x0 + pre, unit = (xEnd - bx) / Math.max(weight, perLine * (group.length < perLine ? 1 : 0) || weight);
       if (group.length < perLine && idx >= bars.length) unit = (xEnd - bx) / Math.max(weight, perLine * 0.75);
-      var labelY = st.y0 - Math.max(hi + 1, 11.5) * s / 2 - 0.5 * s;
+      var labelY = st.y0 - Math.max(hi + 1, 11.5) * s / 2 - 0.5 * s, last = staves[staves.length - 1];
       group.forEach(function (g) {
-        var bw = unit * g.w, beats = g.bar.beats || full, inner = bw - 2.6 * s, acc = {}, t = 0;
-        out.push('<rect class="barbg" data-bar="' + g.i + '" x="' + f(bx) + '" y="' + f(st.y0 - 4 * s) + '" width="' + f(bw) + '" height="' + f(4 * s) + '"/>');
+        var bw = unit * g.w, beats = g.bar.beats || full, inner = bw - 2.6 * s, acc = {}, accB = {}, t = 0;
+        out.push('<rect class="barbg" data-bar="' + g.i + '" x="' + f(bx) + '" y="' + f(st.y0 - 4 * s) + '" width="' + f(bw) + '" height="' + f(last.y0 - st.y0 + 4 * s) + '"/>');
         // Short notes get more than their share of the bar, as in engraved music, so a sixteenth never collides with its neighbour.
-        var onsets = [], cum = [], total = 0;
-        g.bar.notes.forEach(function (n) { onsets.push(t); cum.push(total); total += Math.pow(n.d, 0.55); t += n.d; });
-        onsets.push(t); cum.push(total);
+        // With two staves, every onset from either hand takes part.
+        var onsetSet = {}, k;
+        g.bar.notes.forEach(function (n) { onsetSet[+t.toFixed(4)] = true; t += n.d; });
+        var tl = 0; (g.bar.lh || []).forEach(function (n) { onsetSet[+tl.toFixed(4)] = true; tl += n.d; });
+        var onsets = Object.keys(onsetSet).map(Number).sort(function (a, b2) { return a - b2; }), cum = [0], total = 0;
+        for (k = 0; k < onsets.length; k++) { var nxt = k + 1 < onsets.length ? onsets[k + 1] : beats; total += Math.pow(Math.max(0.125, nxt - onsets[k]), 0.55); cum.push(total); }
+        onsets.push(beats);
         var xAt = function (beat) {
           if (!total) return bx + 1.0 * s + (beat / beats) * inner;
-          for (var k = onsets.length - 2; k >= 0; k--) if (beat >= onsets[k]) {
-            var span = onsets[k + 1] - onsets[k], frac = span ? (beat - onsets[k]) / span : 0;
-            return bx + 1.0 * s + (cum[k] + frac * (cum[k + 1] - cum[k])) / total * inner;
+          for (var q = onsets.length - 2; q >= 0; q--) if (beat >= onsets[q] - 1e-6) {
+            var span = onsets[q + 1] - onsets[q], frac = span ? (beat - onsets[q]) / span : 0;
+            return bx + 1.0 * s + (cum[q] + frac * (cum[q + 1] - cum[q])) / total * inner;
           }
           return bx + 1.0 * s;
         };
-        g.bar.notes.forEach(function (n, k) {
-          var nx = xAt(onsets[k]);
+        t = 0;
+        g.bar.notes.forEach(function (n) {
+          var nx = xAt(t); t += n.d;
           if (n.p) drawChord(out, st, s, nx, [{ p: n.p, cls: n.cls }], n.d, smap, acc); else drawRest(out, st, s, nx, n.d);
         });
+        if (withLh) {
+          tl = 0;
+          (g.bar.lh || []).forEach(function (n) {
+            var nx = xAt(tl); tl += n.d;
+            if (n.ps && n.ps.length) drawChord(out, staves[1], s, nx, n.ps.map(function (p) { return { p: p, cls: n.cls || "lh" }; }), n.d, smap, accB); else drawRest(out, staves[1], s, nx, n.d);
+          });
+        }
         (g.bar.chords || []).forEach(function (c) {
           var cx = xAt(c.beat) - 0.2 * s;
           out.push('<text class="lbl chord" data-ci="' + c.i + '" x="' + f(cx) + '" y="' + f(labelY) + '" font-size="' + f(1.7 * s) + '">' + esc(c.text) + "</text>");
         });
+        if (g.bar.lyric) out.push('<text class="lyr" x="' + f(bx + 1.0 * s) + '" y="' + f(last.y0 + 1.9 * s) + '" font-size="' + f(1.15 * s) + '">' + esc(g.bar.lyric) + "</text>");
         bx += bw;
-        out.push(line(bx, st.y0 - 4 * s, bx, st.y0, Math.max(1, s * 0.12)));
+        out.push(line(bx, st.y0 - 4 * s, bx, last.y0, Math.max(1, s * 0.12)));
       });
-      if (idx >= bars.length) out.push(line(bx - 0.45 * s, st.y0 - 4 * s, bx - 0.45 * s, st.y0, Math.max(1, s * 0.12)));
-      y = st.y0 - Math.min(lo, -3.5) * s / 2 + 1.2 * s;
+      if (idx >= bars.length) out.push(line(bx - 0.45 * s, st.y0 - 4 * s, bx - 0.45 * s, last.y0, Math.max(1, s * 0.12)));
+      y = last.y0 - Math.min(withLh ? blo : lo, -3.5) * s / 2 + (group.some(function (g) { return g.bar.lyric; }) ? 2.4 * s : 1.2 * s);
       sys++;
     }
     el.innerHTML = '<svg class="staff sheet" viewBox="0 0 ' + f(width) + " " + f(y) + '" width="' + f(width) + '" height="' + f(y) + '" role="img" aria-label="Lead sheet">' + out.join("") + "</svg>";

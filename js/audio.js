@@ -1,5 +1,7 @@
-/* Woodshed sound: real pianos recorded note by note (a Yamaha C5 grand and a Kawai upright), a tine electric piano
-   and a small synth made on the spot, plus the metronome click and a look-ahead clock, all on one AudioContext.
+/* Woodshed sound: real pianos recorded note by note (a Yamaha C5 grand and a Kawai upright) and the pianos derived
+   from them (concert, jazz, stage, dream, tape, toy...), a harpsichord, celesta, music box and vibraphone from the
+   FluidR3 soundfont, a real tenor trombone that loops for as long as you hold the key, a tine electric piano and a
+   small synth made on the spot, plus the metronome click and a look-ahead clock, all on one AudioContext.
 
    Every note is its own voice with its own damper, so notes never cut each other off: a new note only ever damps an
    older strike of the same key, the way a hammer re-striking a string does. Letting go of a key damps the note unless
@@ -34,11 +36,14 @@
   // room is happier with soft notes you can still hear.
   function levelFor(v) { return 20 * Math.log10(0.07 + 0.93 * Math.pow(v, 1.7)); }
 
-  // Sample sets. Zones are [lowest key, highest key, recorded key, level trim in dB]; the trims (measured through this
+  // Sample sets. Zones are [lowest key, highest key, recorded key, level trim in dB]; a set's `gain` (dB) brings quieter
+  // recordings up to the grand's level (all measured through this engine). The zone trims (measured through this
   // engine) even out recordings that came out louder or softer than their neighbours. A layer's `level` is where its recordings sit on levelFor's
   // scale, so a strike of any strength is scaled from the nearest recording: the grand's soft layer was recorded
   // 5.6 dB below its loud one; the upright's files were normalised, so both of its layers sit at the same place.
   var LOUD = levelFor(0.85);
+  // One recording every three semitones, each stretched a semitone either way, edges extended over the whole keyboard.
+  function every3(lo, hi) { var z = []; for (var k = lo; k <= hi; k += 3) z.push([k === lo ? 21 : k - 1, k + 3 > hi ? 108 : k + 1, k, 0]); return z; }
   var SETS = {
     grand: { dir: "samples/grand/", layers: [
       { id: "p", upTo: 0.6, level: LOUD - 5.6, zones: [[21,22,21,0],[23,25,24,0],[26,28,27,0],[29,31,30,0],[32,34,33,0],[35,37,36,0],[38,40,39,0],[41,43,42,-1.1],[44,46,45,2.2],[47,49,48,1.1],[50,52,51,0],[53,55,54,1.8],[56,58,57,3.1],[59,61,60,-1.3],[62,64,63,1.1],[65,67,66,0],[68,70,69,-1.4],[71,73,72,-1.7],[74,76,75,-1.1],[77,79,78,-3.6],[80,82,81,0],[83,85,84,1.9],[86,88,87,-4.9],[89,91,90,0],[92,94,93,0],[95,97,96,0],[98,100,99,1.9],[101,103,102,0],[104,106,105,2.2],[107,108,108,-2.4]] },
@@ -47,18 +52,41 @@
     upright: { dir: "samples/upright/", layers: [
       { id: "p", upTo: 0.63, level: LOUD, zones: [[21,22,21,0],[23,25,24,0],[26,28,27,-1.5],[29,31,30,0],[32,34,33,0],[35,37,36,0],[38,40,39,0],[41,43,42,1.8],[44,46,45,0],[47,49,48,2],[50,52,51,3.2],[53,55,54,1],[56,58,57,0],[59,61,60,-1.6],[62,64,63,0],[65,67,66,-3.2],[68,70,69,0],[71,73,72,0],[74,76,75,2.6],[77,79,78,-1.7],[80,82,81,-3.6],[83,85,84,-2.1],[86,88,87,0],[89,91,90,3.5],[92,94,93,1.6],[95,97,96,0],[98,100,99,0],[101,103,102,1.9],[104,106,105,-2.1],[107,108,108,0]] },
       { id: "f", level: LOUD, zones: [[21,22,21,0],[23,23,23,0],[24,25,24,-1],[26,28,27,-2],[29,31,30,0],[32,33,33,0],[34,35,35,0],[36,37,36,1.3],[38,40,39,0],[41,45,42,0],[46,47,47,-1],[48,49,48,2.2],[50,52,51,3.1],[53,55,54,1.3],[56,57,57,0],[58,61,59,0],[62,64,63,0],[65,67,66,0],[68,69,69,0],[70,71,71,0],[72,73,72,-2.1],[74,76,75,-2.1],[77,79,78,0],[80,81,81,-4.1],[82,83,83,-5],[84,85,84,0],[86,88,87,-1.4],[89,91,90,0],[92,93,93,0],[94,95,95,0],[96,97,96,1.3],[98,100,99,1.6],[101,103,102,0],[104,105,105,1.4],[106,107,107,0],[108,108,108,-2.6]] }
-    ] }
+    ] },
+    // FluidR3 General MIDI soundfont (CC BY 3.0), one strength, rendered notes of about three seconds.
+    harpsichord: { dir: "samples/harpsichord/", ext: ".mp3", size: "0.4 MB", gain: 14, layers: [{ id: "", level: LOUD, zones: every3(36, 90) }] },
+    celesta: { dir: "samples/celesta/", ext: ".mp3", size: "0.3 MB", gain: 13, layers: [{ id: "", level: LOUD, zones: every3(55, 100) }] },
+    musicbox: { dir: "samples/musicbox/", ext: ".mp3", size: "0.3 MB", gain: 14, layers: [{ id: "", level: LOUD, zones: every3(55, 100) }] },
+    vibes: { dir: "samples/vibes/", ext: ".mp3", size: "0.3 MB", gain: 18, layers: [{ id: "", level: LOUD, zones: every3(48, 93) }] },
+    // VSCO 2 Community Edition tenor trombone (CC0), medium strength, sustained notes that loop while a key is held.
+    trombone: { dir: "samples/trombone/", size: "0.7 MB", gain: 16, sustain: true, layers: [{ id: "", level: LOUD, zones: [[21,35,34,0],[36,38,37,0],[39,40,39,0],[41,43,41,0],[44,47,46,0],[48,51,50,0],[52,56,53,0],[57,60,60,0],[61,61,61,0],[62,64,63,0],[65,108,65,0]] }] }
   };
+  A.SIZES = {}; Object.keys(SETS).forEach(function (k) { A.SIZES[k] = SETS[k].size || ""; });
+  SETS.grand.size = "3.6 MB"; SETS.upright.size = "2.6 MB"; A.SIZES.grand = "3.6 MB"; A.SIZES.upright = "2.6 MB";
 
+  // family: piano | keys | brass. set: which recordings. eq/wet/trim/vel/detune/felt shape the sound; chorus, lofi,
+  // shift (semitones), decay (forced damp after n seconds) and trem ("pan" or "amp") add the rest.
   var INSTRUMENTS = A.INSTRUMENTS = [
-    { id: "grand", name: "Grand piano", blurb: "A Yamaha C5 concert grand, recorded note by note at two strengths.", set: "grand", wet: 1 },
-    { id: "bright", name: "Bright grand", blurb: "The same grand with the lid wide open. Cuts through for pop and rock.", set: "grand", vel: 0.08, eq: [["lowshelf", 160, -2.5], ["peaking", 2600, 2, 0.8], ["highshelf", 5200, 4]], wet: 0.65, trim: -1.2 },
-    { id: "upright", name: "Upright piano", blurb: "A Kawai upright in a living room, heard from the bench. Warm and close.", set: "upright", wet: 0.75, trim: 0.3 },
-    { id: "felt", name: "Felt piano", blurb: "A strip of felt between hammers and strings. Hushed and soft, for late nights.", set: "grand", vel: -0.18, felt: true, wet: 1.6, trim: 4 },
-    { id: "honky", name: "Honky-tonk", blurb: "An old saloon upright whose strings have drifted apart. Ragtime ready.", set: "upright", detune: 16, eq: [["peaking", 1800, 3, 0.9], ["highshelf", 4200, 2]], wet: 0.55, trim: -0.2 },
-    { id: "epiano", name: "Electric piano", blurb: "Bell-like tines with a bark when you dig in. Made on the spot, nothing to download.", synth: "fm", wet: 0.85, trem: true, trim: 4.2 },
-    { id: "synth", name: "Simple synth", blurb: "Woodshed's original sound. Nothing to download.", synth: "basic", wet: 1, trim: 1.5 }
+    { id: "grand", family: "piano", name: "Grand piano", blurb: "A Yamaha C5 concert grand, recorded note by note at two strengths.", set: "grand", wet: 1 },
+    { id: "concert", family: "piano", name: "Concert grand", blurb: "The same grand heard from the tenth row of a hall: rounder, with air around it.", set: "grand", vel: -0.05, eq: [["lowshelf", 220, 1.5], ["highshelf", 4200, -2.5]], wet: 1.7, trim: 0.6 },
+    { id: "jazz", family: "piano", name: "Jazz grand", blurb: "Close and mellow, lid on the short stick. For ballads, comping and late sets.", set: "grand", vel: -0.1, eq: [["peaking", 320, 1.5, 1], ["highshelf", 3000, -4.5]], wet: 0.45, trim: 1 },
+    { id: "bright", family: "piano", name: "Bright grand", blurb: "The same grand with the lid wide open. Cuts through for pop and rock.", set: "grand", vel: 0.08, eq: [["lowshelf", 160, -2.5], ["peaking", 2600, 2, 0.8], ["highshelf", 5200, 4]], wet: 0.65, trim: -1.2 },
+    { id: "stage", family: "piano", name: "Pop stage piano", blurb: "Punchy and forward, the piano on a pop record. Sits on top of a band.", set: "grand", vel: 0.1, eq: [["lowshelf", 150, 2], ["peaking", 2400, 2.5, 0.8], ["highshelf", 6000, 1.5]], wet: 0.35, trim: -1.5 },
+    { id: "felt", family: "piano", name: "Felt piano", blurb: "A strip of felt between hammers and strings. Hushed and soft, for late nights.", set: "grand", vel: -0.18, felt: true, wet: 1.6, trim: 4 },
+    { id: "dream", family: "piano", name: "Dream piano", blurb: "Soft, wide and shimmering, with a long tail. Lo-fi beats and film scores.", set: "grand", vel: -0.12, chorus: true, eq: [["highshelf", 5000, -3]], wet: 2.2, trim: 1.5 },
+    { id: "upright", family: "piano", name: "Upright piano", blurb: "A Kawai upright in a living room, heard from the bench. Warm and close.", set: "upright", wet: 0.75, trim: 0.3 },
+    { id: "tape", family: "piano", name: "Lo-fi tape", blurb: "An old cassette of the upright: wobbly, warm and narrow. Bedroom-pop piano.", set: "upright", lofi: true, wet: 0.6, trim: -3 },
+    { id: "honky", family: "piano", name: "Honky-tonk", blurb: "An old saloon upright whose strings have drifted apart. Ragtime ready.", set: "upright", detune: 16, eq: [["peaking", 1800, 3, 0.9], ["highshelf", 4200, 2]], wet: 0.55, trim: -0.2 },
+    { id: "toy", family: "piano", name: "Toy piano", blurb: "Tinny and bell-like, an octave up, like the one in the kids' corner.", set: "upright", shift: 12, detune: 10, decay: 1.1, eq: [["highpass", 260, 0, 0.7], ["peaking", 3000, 5, 1]], wet: 0.5, trim: -1 },
+    { id: "epiano", family: "keys", name: "Electric piano", blurb: "Bell-like tines with a bark when you dig in. Made on the spot, nothing to download.", synth: "fm", wet: 0.85, trem: "pan", trim: 4.2 },
+    { id: "harpsichord", family: "keys", name: "Harpsichord", blurb: "Plucked strings, no soft or loud. Pure Bach.", set: "harpsichord", wet: 0.9, trim: 0 },
+    { id: "celesta", family: "keys", name: "Celesta", blurb: "Bell keys: the Sugar Plum Fairy sound.", set: "celesta", wet: 1.3, trim: 0 },
+    { id: "musicbox", family: "keys", name: "Music box", blurb: "Tiny plucked tines. A lullaby in a wind-up box.", set: "musicbox", wet: 1.5, trim: 0 },
+    { id: "vibes", family: "keys", name: "Vibraphone", blurb: "Metal bars with a spinning tremolo. Jazz ballads and lounge.", set: "vibes", trem: "amp", wet: 1.2, trim: 0 },
+    { id: "synth", family: "keys", name: "Simple synth", blurb: "Woodshed's original sound. Nothing to download.", synth: "basic", wet: 1, trim: 1.5 },
+    { id: "trombone", family: "brass", name: "Trombone", blurb: "A real tenor trombone that holds the note as long as you hold the key. Hear a line the way it sings.", set: "trombone", wet: 1.2, trim: 0 }
   ];
+  A.FAMILIES = [["piano", "Pianos"], ["keys", "Other keys"], ["brass", "Brass"]];
   var byId = {}; INSTRUMENTS.forEach(function (ins) { byId[ins.id] = ins; });
   var current = INSTRUMENTS[0];
 
@@ -135,7 +163,8 @@
   A.ROOMS = [["dry", "Dry"], ["room", "Room"], ["hall", "Hall"]];
 
   A.setVolume = function (v) { volume = v; if (nodes) nodes.master.gain.setTargetAtTime(muted ? 0 : v, ctx.currentTime, 0.02); };
-  A.setMuted = function (m) { muted = m; if (nodes) nodes.master.gain.setTargetAtTime(m ? 0 : volume, ctx.currentTime, 0.02); };
+  A.setMuted = function (m) { muted = !!m; if (nodes) nodes.master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.02); };
+  A.muted = function () { return muted; };
 
   // One bus per instrument: its tone shaping, then the dry path and the reverb send.
   function busFor(ins) {
@@ -150,11 +179,39 @@
     if (ins.synth === "fm") {
       var soft = ctx.createBiquadFilter(); soft.type = "lowpass"; soft.frequency.value = 7000; soft.Q.value = 0.3; last.connect(soft); last = soft;
     }
-    if (ins.trem && ctx.createStereoPanner) {
+    if (ins.trem === "pan" && ctx.createStereoPanner) {
       // the suitcase tremolo: the sound swings gently between the speakers
       var pan = ctx.createStereoPanner(), lfo = ctx.createOscillator(), depth = ctx.createGain();
       lfo.frequency.value = 4.3; depth.gain.value = 0.3; lfo.connect(depth); depth.connect(pan.pan); lfo.start();
       last.connect(pan); last = pan;
+    } else if (ins.trem === "amp") {
+      // a vibraphone's motor: the loudness pulses
+      var tg = ctx.createGain(), tl = ctx.createOscillator(), td = ctx.createGain();
+      tg.gain.value = 0.72; tl.frequency.value = 4.6; td.gain.value = 0.28; tl.connect(td); td.connect(tg.gain); tl.start();
+      last.connect(tg); last = tg;
+    }
+    if (ins.chorus) {
+      // two short delays wobbling out of step, one to each side: width and shimmer
+      var cOut = ctx.createGain(), cDry = ctx.createGain(); cDry.gain.value = 0.72; last.connect(cDry); cDry.connect(cOut);
+      [0, 1].forEach(function (i) {
+        var dl = ctx.createDelay(0.06), lfo2 = ctx.createOscillator(), dep2 = ctx.createGain(), g = ctx.createGain();
+        dl.delayTime.value = 0.017 + i * 0.008; lfo2.frequency.value = 0.33 + i * 0.21; dep2.gain.value = 0.0022; g.gain.value = 0.42;
+        lfo2.connect(dep2); dep2.connect(dl.delayTime); lfo2.start();
+        last.connect(dl); dl.connect(g);
+        if (ctx.createStereoPanner) { var p2 = ctx.createStereoPanner(); p2.pan.value = i ? 0.65 : -0.65; g.connect(p2); p2.connect(cOut); } else g.connect(cOut);
+      });
+      last = cOut;
+    }
+    if (ins.lofi) {
+      // a cassette: no lows, no highs, a slow wow and a fast flutter on the pitch, a little grit
+      var hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 140; hp.Q.value = 0.7;
+      var lp2 = ctx.createBiquadFilter(); lp2.type = "lowpass"; lp2.frequency.value = 3400; lp2.Q.value = 0.8;
+      var wow = ctx.createDelay(0.05); wow.delayTime.value = 0.012;
+      [[0.55, 0.0013], [6.2, 0.00012]].forEach(function (m) { var o = ctx.createOscillator(), d = ctx.createGain(); o.frequency.value = m[0]; d.gain.value = m[1]; o.connect(d); d.connect(wow.delayTime); o.start(); });
+      var sat = ctx.createWaveShaper(), N2 = 1025, cv = new Float32Array(N2);
+      for (var q = 0; q < N2; q++) { var x2 = q / (N2 - 1) * 2 - 1; cv[q] = Math.tanh(1.6 * x2) / Math.tanh(1.6); }
+      sat.curve = cv;
+      last.connect(hp); hp.connect(wow); wow.connect(sat); sat.connect(lp2); last = lp2;
     }
     var send = ctx.createGain(); send.gain.value = ins.wet == null ? 1 : ins.wet;
     last.connect(nodes.dry); last.connect(send); send.connect(nodes.wet);
@@ -188,7 +245,24 @@
   // Which sample sets have been downloaded on this device (the service worker keeps the files).
   function savedSets() { try { return JSON.parse(localStorage.getItem("ws.samples")) || {}; } catch (e) { return {}; } }
   function markSaved(name) { try { var m = savedSets(); m[name] = true; localStorage.setItem("ws.samples", JSON.stringify(m)); } catch (e) {} }
-  function urlsOf(name) { var S = SETS[name], out = []; S.layers.forEach(function (L) { L.zones.forEach(function (z) { out.push(S.dir + z[2] + L.id + ".m4a"); }); }); return out; }
+  function fileOf(S, L, key) { return S.dir + key + L.id + (S.ext || ".m4a"); }
+  function urlsOf(name) { var S = SETS[name], out = []; S.layers.forEach(function (L) { L.zones.forEach(function (z) { out.push(fileOf(S, L, z[2])); }); }); return out; }
+  // A sustained sound loops a steady stretch of its recording. Pick the stretch whose ends match, so the join is silent:
+  // start on a rising zero crossing about a second in, end on the rising crossing a few seconds later whose next
+  // milliseconds look most like the ones after the start.
+  function loopPoints(buf) {
+    var d = buf.getChannelData(0), sr = buf.sampleRate, i;
+    var start = Math.floor(sr * 1.1), end = Math.min(d.length - Math.floor(sr * 0.5), start + Math.floor(sr * 3.2));
+    if (end - start < sr * 0.6) return null;
+    while (start < end && !(d[start - 1] <= 0 && d[start] > 0)) start++;
+    var win = 1024, best = Infinity, bestE = end, lo = end - Math.floor(sr * 0.06), hi = Math.min(end + Math.floor(sr * 0.06), d.length - win - 1);
+    for (var e = lo; e < hi; e++) {
+      if (!(d[e - 1] <= 0 && d[e] > 0)) continue;
+      var err = 0; for (i = 0; i < win; i++) { var df = d[start + i] - d[e + i]; err += df * df; }
+      if (err < best) { best = err; bestE = e; }
+    }
+    return { start: start / sr, end: bestE / sr };
+  }
   function state(name) { return loaded[name] || (loaded[name] = { buffers: {}, loaded: 0, total: 0, failed: 0, state: "idle" }); }
 
   function load(ins) {
@@ -206,10 +280,10 @@
     function worker() {
       if (next >= jobs.length) return Promise.resolve();
       var j = jobs[next++];
-      return fetch(S.dir + j.key + j.L.id + ".m4a")
+      return fetch(fileOf(S, j.L, j.key))
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.arrayBuffer(); })
         .then(decode)
-        .then(function (buf) { R.buffers[j.L.id][j.key] = prep(buf); R.loaded++; }, function () { R.failed++; })
+        .then(function (buf) { var p = prep(buf); if (S.sustain) p.loop = loopPoints(buf); R.buffers[j.L.id][j.key] = p; R.loaded++; }, function () { R.failed++; })
         .then(function () { notify(name); return worker(); });
     }
     R.promise = Promise.all([worker(), worker(), worker(), worker()]).then(function () {
@@ -295,16 +369,16 @@
   }
 
   function sampleVoice(ins, midi, vel, t) {
-    var v = clamp(vel + (ins.vel || 0), 0.02, 1), hit = pickSample(ins, midi, v);
+    var v = clamp(vel + (ins.vel || 0), 0.02, 1), played = midi + (ins.shift || 0), hit = pickSample(ins, played, v);
     if (!hit) return null;
-    var S = SETS[ins.set], L = hit.L, rate = Math.pow(2, (midi - hit.key) / 12);
+    var S = SETS[ins.set], L = hit.L, rate = Math.pow(2, (played - hit.key) / 12);
     // Softer strikes excite fewer overtones: within each recorded strength, close a lowpass toward the one below it.
-    var lo = hit.li ? S.layers[hit.li - 1].upTo : 0, hi = L.upTo || 1, x = clamp((v - lo) / (hi - lo), 0, 1), f0 = freq(midi);
+    var lo = hit.li ? S.layers[hit.li - 1].upTo : 0, hi = L.upTo || 1, x = clamp((v - lo) / (hi - lo), 0, 1), f0 = freq(played);
     var cutoff = hit.li === 0 ? Math.max(500, f0 * (3 + 34 * x * x)) : Math.max(900, f0 * (5 + 64 * x * x));
     if (ins.felt) cutoff = Math.min(cutoff, Math.max(f0 * 2.6, 700 + 1900 * v));
     cutoff = Math.min(cutoff, 20000);
-    var level = dbGain(levelFor(v) - L.level + hit.trim) * (ins.detune ? 0.72 : 1);
-    var voice = { midi: midi, t: t, tau: midi >= 89 ? 0.5 : 0.055 + 0.17 * clamp((72 - midi) / 51, 0, 1) };
+    var level = dbGain(levelFor(v) - L.level + hit.trim + (S.gain || 0)) * (ins.detune ? 0.72 : 1);
+    var voice = { midi: midi, t: t, tau: S.sustain ? 0.09 : midi >= 89 ? 0.5 : 0.055 + 0.17 * clamp((72 - midi) / 51, 0, 1) };
     var into = stages(voice, level, busFor(ins).input), lp = ctx.createBiquadFilter();
     lp.type = "lowpass"; lp.Q.value = 0.35; lp.frequency.value = cutoff; lp.connect(into);
     if (ins.felt) {
@@ -315,11 +389,14 @@
     cents.forEach(function (c, i) {
       var s = ctx.createBufferSource(); s.buffer = hit.s.buf;
       s.playbackRate.value = rate * Math.pow(2, c / 1200);
+      if (S.sustain && hit.s.loop) { s.loop = true; s.loopStart = hit.s.loop.start; s.loopEnd = hit.s.loop.end; }
       s.connect(lp); s.start(t + i * 0.003, hit.s.offset);
       srcs.push(s);
     });
-    voice.end = t + (hit.s.buf.duration - hit.s.offset) / rate;
-    return finish(voice, srcs);
+    voice.end = S.sustain && hit.s.loop ? Infinity : t + (hit.s.buf.duration - hit.s.offset) / rate;
+    finish(voice, srcs);
+    if (ins.decay) damp(voice, t + ins.decay, 0.14);           // a toy piano's felt stops the note early
+    return voice;
   }
 
   // The fallback while samples download, and the "Simple synth": two strings of harmonics, a felt thump, a lowpass
@@ -420,10 +497,13 @@
     kill(victim, 0.012);
   }
 
+  var override = null;
+  // Run fn with another instrument switched in (its recordings load on demand, the synth fills in until they land).
+  A.using = function (id, fn) { var ins = byId[id]; if (!ins) return fn(); if (ctx) load(ins); var was = override; override = ins; try { return fn(); } finally { override = was; } };
   function strike(midi, vel, t, isLive) {
     if (!A.init()) return null;
     makeRoom();
-    var ins = current, v = null;
+    var ins = override || current, v = null;
     if (ins.synth === "fm") v = fmVoice(ins, midi, vel, t);
     else if (ins.set) v = sampleVoice(ins, midi, vel, t);
     if (!v) v = basicVoice(ins, midi, vel, t);

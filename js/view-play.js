@@ -10,13 +10,13 @@
     m: w => w < 500 ? 2 : w < 700 ? 3 : w < 900 ? 4 : 5,
     s: w => w < 500 ? 3 : w < 700 ? 4 : w < 900 ? 5 : 7
   };
-  const SIZES = { grand: "3.6 MB", upright: "2.6 MB" };
   const COMPOUND = { 13: "Minor 9th", 14: "Major 9th", 15: "Minor 10th", 16: "Major 10th", 17: "Perfect 11th", 18: "Augmented 11th", 19: "Perfect 12th", 20: "Minor 13th", 21: "Major 13th", 22: "Minor 14th", 23: "Major 14th", 24: "Two octaves" };
   const BLACK = [1, 3, 6, 8, 10];
   let kb = null, ringTimer = 0, demoWanted = null, pedalPress = null, learn = null, listen = null;
   const ringing = new Map();                              // midi -> when it stops counting as still ringing (pedal)
   const rec = { on: false, t0: 0, events: [], play: null, tick: 0 };
   const P = () => state.play;
+  const mutedNote = () => A.muted() ? ' <span class="error">Sound is muted (quiet mode). Tap the speaker at the top to hear it.</span>' : "";
   const uniq = a => a.filter((x, i) => a.indexOf(x) === i);
   const clock = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
 
@@ -72,12 +72,12 @@
     if (st.state === "ready") return st.failed ? "Ready (a few notes borrowed from their neighbours)." : "Ready, and kept for offline use.";
     if (st.state === "loading") return "Downloading " + Math.round(100 * st.loaded / Math.max(1, st.total)) + "%…";
     if (st.state === "error") return "Couldn't download it just now; the synth fills in until it can.";
-    return st.saved ? "Saved on this device." : "A " + SIZES[ins.set] + " download the first time, then it works offline.";
+    return st.saved ? "Saved on this device." : "A " + A.SIZES[ins.set] + " download the first time, then it works offline.";
   }
   function paintSounds() {
     const cur = A.instrument();
     const row = $("#pSounds");
-    row.innerHTML = A.INSTRUMENTS.map(ins => `<button type="button" class="sound ${ins.id === cur ? "on" : ""}" data-inst="${ins.id}" role="radio" aria-checked="${ins.id === cur}"><i class="st ${ins.set ? A.status(ins.id).state : "ready"}" data-st="${ins.id}" aria-hidden="true"></i>${esc(ins.name)}</button>`).join("");
+    row.innerHTML = A.FAMILIES.map(fam => `<span class="sound-fam">${esc(fam[1])}</span>` + A.INSTRUMENTS.filter(i => i.family === fam[0]).map(ins => `<button type="button" class="sound ${ins.id === cur ? "on" : ""}" data-inst="${ins.id}" role="radio" aria-checked="${ins.id === cur}"><i class="st ${ins.set ? A.status(ins.id).state : "ready"}" data-st="${ins.id}" aria-hidden="true"></i>${esc(ins.name)}</button>`).join("")).join("");
     // keep the chosen sound in sight on a phone, where the row scrolls sideways
     const on = row.querySelector(".sound.on");
     if (on && (on.offsetLeft < row.scrollLeft || on.offsetLeft + on.offsetWidth > row.scrollLeft + row.clientWidth)) row.scrollLeft = on.offsetLeft - 24;
@@ -85,7 +85,7 @@
   }
   function paintBlurb() {
     const ins = A.INSTRUMENTS.filter(i => i.id === A.instrument())[0], el = $("#pBlurb");
-    if (el && ins) el.innerHTML = esc(ins.blurb) + ' <span class="' + (ins.set ? A.status(ins.id).state : "ready") + '">' + esc(statusText(ins)) + "</span>";
+    if (el && ins) el.innerHTML = esc(ins.blurb) + ' <span class="' + (ins.set ? A.status(ins.id).state : "ready") + '">' + esc(statusText(ins)) + "</span>" + mutedNote();
   }
   function choose(id) {
     A.init(); A.setInstrument(id); state.settings.instrument = id; App.save(); paintSounds();
@@ -165,7 +165,7 @@
   }
 
   /* ---------- learn a melody ---------- */
-  function tune(id) { return W.SONGS.filter(s => s.id === id)[0] || W.SONGS[0]; }
+  function tune(id) { return W.Songs.byId(id) || W.SONGS[0]; }
   function prep(song) {
     const bars = W.Sheet.parseSong(song), notes = [], chords = [];
     let at = 0;
@@ -210,7 +210,8 @@
   }
   function paintLearn() {
     const song = tune(P().song), best = (P().best || {})[song.id];
-    $("#pSong").innerHTML = W.SONGS.map(s => `<option value="${esc(s.id)}" ${s.id === song.id ? "selected" : ""}>${esc(s.title)}</option>`).join("");
+    const opt = s => `<option value="${esc(s.id)}" ${s.id === song.id ? "selected" : ""}>${esc(s.title)}</option>`, mineS = W.Songs.mine();
+    $("#pSong").innerHTML = (mineS.length ? `<optgroup label="My songs">${mineS.map(opt).join("")}</optgroup><optgroup label="Built in">` : "") + W.SONGS.map(opt).join("") + (mineS.length ? "</optgroup>" : "");
     $("#pLGo").innerHTML = learn ? App.STOP + " Stop" : App.PLAY + " Start";
     $("#pLGo").classList.toggle("stop", !!learn);
     $("#pLListen").innerHTML = listen ? App.STOP + " Stop listening" : "Listen first";
@@ -397,7 +398,7 @@
       W.activeKeyboard = kb;
       kb.o.labels = state.settings.labels; kb.layout(true);
       paintSounds(); paintPedal(A.pedalDown()); paintRec(); this.paintTools();
-      if (params.learn && W.SONGS.some(s => s.id === params.learn)) { P().song = params.learn; P().mode = "learn"; App.save(); history.replaceState(null, "", "#/piano"); if (learn) learnStop(); }
+      if (params.learn && W.Songs.byId(params.learn)) { P().song = params.learn; P().mode = "learn"; App.save(); history.replaceState(null, "", "#/piano"); if (learn) learnStop(); }
       this.paintMode();
       if (P().mode === "learn") setTimeout(() => $("#pCard").scrollIntoView({ behavior: "smooth", block: "start" }), 60);
     },

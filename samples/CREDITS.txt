@@ -14,3 +14,13 @@ Changes made for Woodshed: every file was trimmed to start at its attack, shorte
 zones that end early were extended through their own loop with a gentle decay), the upright bank was lowered
 3 dB as a whole, three soft upright zones have the SFZ's low-pass filter baked in, and all files were re-encoded
 as AAC (.m4a). File names are {midi of the sampled key}{layer}.m4a.
+
+harpsichord/ celesta/ musicbox/ vibes/
+          FluidR3 General MIDI soundfont by Frank Wen, as rendered note by note (MP3) for MIDI.js by Benjamin Gleitzman,
+          https://github.com/gleitz/midi-js-soundfonts. License: Creative Commons Attribution 3.0. One note every three
+          semitones was taken; file names are {midi}.mp3.
+
+trombone/ Tenor trombone sustains from VSCO 2 Community Edition by Versilian Studios (Sam Gossner),
+          https://github.com/sgossner/VSCO-2-CE. License: CC0 1.0 public domain dedication. The medium (v2) layer,
+          trimmed to the attack, cut to 7 s with a fade, re-encoded as AAC. The app loops a steady stretch of each note
+          while a key is held. VSCO names middle C "C3"; file names here use MIDI numbers (C4 = 60).
